@@ -35,9 +35,23 @@
             background: rgba(0,0,0,0.5);
             padding: 10px;
             border: 1px solid #fff;
-            width: 200px;
+            width: 220px;
             display: none;
             font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .spell-row {
+            padding: 2px;
+            margin: 1px 0;
+            border-radius: 3px;
+        }
+        .spell-row.selected {
+            background-color: #0f0;
+            color: #000;
+        }
+        .spell-row.special {
+            font-style: italic;
         }
         #controls {
             position: absolute;
@@ -101,24 +115,24 @@
         <div>XP: <span id="xp">0</span>/<span id="nextLevel">100</span></div>
     </div>
     <div id="spells">
-        <h3>Spells</h3>
-        <div>1: Magic Shot (CD: <span id="cd1">0</span>s) [UNLOCKED]</div>
-        <div>2: Tri-Shot (CD: <span id="cd2">∞</span>s) [LOCKED]</div>
-        <div>3: Beam Shot (CD: <span id="cd3">∞</span>s) [LOCKED]</div>
-        <div>4: Ice Shard (CD: <span id="cd4">∞</span>s) [LOCKED]</div>
-        <div>5: Lightning (CD: <span id="cd5">∞</span>s) [LOCKED]</div>
-        <div>6: Curve Shot (CD: <span id="cd6">∞</span>s) [LOCKED]</div>
-        <div>7: Shield Breaker (CD: <span id="cd7">∞</span>s) [LOCKED]</div>
-        <div>8: Homing Missile (CD: <span id="cd8">∞</span>s) [LOCKED]</div>
-        <div>9: Force Wave (CD: <span id="cd9">∞</span>s) [LOCKED]</div>
-        <div>C: Penta Shot (CD: <span id="cd10">∞</span>s) [LOCKED]</div>
-        <div>V: Recursive Shot (CD: <span id="cd11">∞</span>s) [LOCKED]</div>
-        <div>B: Shield Attack (CD: <span id="cd12">∞</span>s) [LOCKED]</div>
-        <div>N: Beta Laser (CD: <span id="cd13">∞</span>s) [LOCKED]</div>
-        <div>M: Super Speed (CD: <span id="cd14">∞</span>s) [LOCKED]</div>
+        <h3>Spells (Cycle with ,)</h3>
+        <div class="spell-row" id="spell-row-1">1: Magic Shot (CD: <span id="cd1">0</span>s) [UNLOCKED]</div>
+        <div class="spell-row" id="spell-row-2">2: Tri-Shot (CD: <span id="cd2">∞</span>s) [LOCKED]</div>
+        <div class="spell-row" id="spell-row-3">3: Beam Shot (CD: <span id="cd3">∞</span>s) [LOCKED]</div>
+        <div class="spell-row" id="spell-row-4">4: Ice Shard (CD: <span id="cd4">∞</span>s) [LOCKED]</div>
+        <div class="spell-row" id="spell-row-5">5: Lightning (CD: <span id="cd5">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-6">6: Curve Shot (CD: <span id="cd6">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-7">7: Shield Breaker (CD: <span id="cd7">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-8">8: Homing Missile (CD: <span id="cd8">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-9">9: Force Wave (CD: <span id="cd9">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-10">C: Penta Shot (CD: <span id="cd10">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-11">V: Recursive Shot (CD: <span id="cd11">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-12">B: Shield Attack (CD: <span id="cd12">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-13">N: Beta Laser (CD: <span id="cd13">∞</span>s) [LOCKED]</div>
+        <div class="spell-row special" id="spell-row-14">M: Super Speed (CD: <span id="cd14">∞</span>s) [LOCKED]</div>
     </div>
     <div id="controls">
-        Movement: WASD/Arrows. Aim: Mouse. Spells: 1-9, C-V-B-N-M. Shield: Hold SPACE. R: Restart.
+        Movement: WASD/Arrows. Cycle Attack: , key. Fire: Mouse Click. Shield: Hold SPACE. R: Restart.
     </div>
     <div id="mainMenu">
         <h1>Alternate's Magical Evolution</h1>
@@ -151,7 +165,6 @@
         const uiLevel = document.getElementById('level');
         const uiXP = document.getElementById('xp');
         const uiNext = document.getElementById('nextLevel');
-        const cds = ['cd1','cd2','cd3','cd4','cd5','cd6','cd7','cd8','cd9','cd10','cd11','cd12','cd13','cd14'].map(id => document.getElementById(id));
         const levelUpDiv = document.getElementById('levelUp');
         const upgradeOptions = document.getElementById('upgradeOptions');
         const mainMenu = document.getElementById('mainMenu');
@@ -168,24 +181,25 @@
                 speed: 3,
                 level: 1, xp: 0, xpToNext: 100,
                 pl: 1, atk: 20, def: 10,
-                unlocked: new Set([1]), // Start with only 1
+                unlocked: new Set([1]),
+                selectedSpell: 1,
                 spells: {
-                    1: { name: 'Magic Shot', damage: 20, cost: 20, cooldown: 0, maxCd: 500, type: 'projectile' },
-                    2: { name: 'Tri-Shot', damage: 15, cost: 25, cooldown: Infinity, maxCd: 700, type: 'multi' },
-                    3: { name: 'Beam Shot', damage: 30, cost: 30, cooldown: Infinity, maxCd: 1500, type: 'beam' },
-                    4: { name: 'Ice Shard', damage: 15, cost: 15, cooldown: Infinity, maxCd: 800, type: 'ice' },
-                    5: { name: 'Lightning', damage: 25, cost: 25, cooldown: Infinity, maxCd: 1000, type: 'chain' },
-                    6: { name: 'Curve Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 900, type: 'homing', homingStrength: 0.05 },
-                    7: { name: 'Shield Breaker', damage: 0, cost: 40, cooldown: Infinity, maxCd: 2000, type: 'aoe_break', breakStrength: 50 },
-                    8: { name: 'Homing Missile', damage: 35, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'homing_missile' },
-                    9: { name: 'Force Wave', damage: 20, cost: 30, cooldown: Infinity, maxCd: 1100, type: 'wave', aoeRadius: 50 },
-                    10: { name: 'Penta Shot', damage: 12, cost: 30, cooldown: Infinity, maxCd: 1000, type: 'multi_penta' },
-                    11: { name: 'Recursive Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 800, type: 'recursive' },
-                    12: { name: 'Shield Attack', damage: 40, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'shield_proj' },
-                    13: { name: 'Beta Laser', damage: 50, cost: 50, cooldown: Infinity, maxCd: 2000, type: 'beta_beam' },
-                    14: { name: 'Super Speed', damage: 0, cost: 20, cooldown: Infinity, maxCd: 5000, type: 'buff_speed' }
+                    1: { name: 'Magic Shot', damage: 20, cost: 20, cooldown: 0, maxCd: 500, type: 'projectile', special: false },
+                    2: { name: 'Tri-Shot', damage: 15, cost: 25, cooldown: Infinity, maxCd: 700, type: 'multi', special: false },
+                    3: { name: 'Beam Shot', damage: 30, cost: 30, cooldown: Infinity, maxCd: 1500, type: 'beam', special: true },
+                    4: { name: 'Ice Shard', damage: 15, cost: 15, cooldown: Infinity, maxCd: 800, type: 'ice', special: false },
+                    5: { name: 'Lightning', damage: 25, cost: 25, cooldown: Infinity, maxCd: 1000, type: 'chain', special: true },
+                    6: { name: 'Curve Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 900, type: 'homing', special: true, homingStrength: 0.05 },
+                    7: { name: 'Shield Breaker', damage: 0, cost: 40, cooldown: Infinity, maxCd: 2000, type: 'aoe_break', special: true, breakStrength: 50 },
+                    8: { name: 'Homing Missile', damage: 35, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'homing_missile', special: true },
+                    9: { name: 'Force Wave', damage: 20, cost: 30, cooldown: Infinity, maxCd: 1100, type: 'wave', special: true, aoeRadius: 50 },
+                    10: { name: 'Penta Shot', damage: 12, cost: 30, cooldown: Infinity, maxCd: 1000, type: 'multi_penta', special: true },
+                    11: { name: 'Recursive Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 800, type: 'recursive', special: true },
+                    12: { name: 'Shield Attack', damage: 40, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'shield_proj', special: true },
+                    13: { name: 'Beta Laser', damage: 50, cost: 50, cooldown: Infinity, maxCd: 2000, type: 'beta_beam', special: true },
+                    14: { name: 'Super Speed', damage: 0, cost: 20, cooldown: Infinity, maxCd: 5000, type: 'buff_speed', special: true }
                 },
-                shield: { active: false, strength: 100, absorbed: 0, yield: 1.0, omni: false },
+                shield: { active: false, strength: 100, yield: 1.0, omni: false },
                 usedUpgrades: new Set(),
                 manaRegen: 20
             },
@@ -202,7 +216,6 @@
             gameOver: false,
             paused: false,
             upgradePool: [
-                // Unlocks
                 {id: 'unlock_2', name: 'Unlock Tri-Shot (2)', apply: (p) => { p.unlocked.add(2); p.spells[2].cooldown = 0; }},
                 {id: 'unlock_3', name: 'Unlock Beam Shot (3)', apply: (p) => { p.unlocked.add(3); p.spells[3].cooldown = 0; }},
                 {id: 'unlock_4', name: 'Unlock Ice Shard (4)', apply: (p) => { p.unlocked.add(4); p.spells[4].cooldown = 0; }},
@@ -216,7 +229,6 @@
                 {id: 'unlock_12', name: 'Unlock Shield Attack (B)', apply: (p) => { p.unlocked.add(12); p.spells[12].cooldown = 0; }},
                 {id: 'unlock_13', name: 'Unlock Beta Laser (N)', apply: (p) => { p.unlocked.add(13); p.spells[13].cooldown = 0; }},
                 {id: 'unlock_14', name: 'Unlock Super Speed (M)', apply: (p) => { p.unlocked.add(14); p.spells[14].cooldown = 0; }},
-                // Other upgrades (damage, stats, etc.)
                 {id: 'fire_dmg', name: 'Magic Shot + Damage', apply: (p) => p.spells[1].damage += 10 },
                 {id: 'atk_up', name: 'ATK +5', apply: (p) => p.atk += 5 },
                 {id: 'def_up', name: 'DEF +5', apply: (p) => p.def += 5 },
@@ -228,33 +240,28 @@
             ]
         };
 
-        // Draw refined stick figure
         function drawStickFigure(x, y, color, hat = false, size = 1) {
             ctx.save();
             ctx.translate(x, y);
             ctx.scale(size, size);
-            // Body
             ctx.strokeStyle = color;
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(0, -10);
             ctx.lineTo(0, 10);
             ctx.stroke();
-            // Arms
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(-8, 5);
             ctx.moveTo(0, 0);
             ctx.lineTo(8, 5);
             ctx.stroke();
-            // Legs
             ctx.beginPath();
             ctx.moveTo(0, 10);
             ctx.lineTo(-5, 20);
             ctx.moveTo(0, 10);
             ctx.lineTo(5, 20);
             ctx.stroke();
-            // Head
             ctx.beginPath();
             ctx.arc(0, -15, 5, 0, Math.PI * 2);
             ctx.stroke();
@@ -265,7 +272,6 @@
             ctx.restore();
         }
 
-        // Menu functions
         window.startGame = function() {
             gameState.currentScreen = 'game';
             mainMenu.style.display = 'none';
@@ -273,15 +279,14 @@
             document.getElementById('spells').style.display = 'block';
             document.getElementById('controls').style.display = 'block';
             loadSave();
-            // Ensure fresh spawn
             gameState.enemies = [];
             gameState.bosses = [];
             generateWave(gameState.player.level);
             gameState.gameOver = false;
             gameState.paused = false;
             gameState.lastTime = performance.now();
+            updateSpellUI();
             updateUI();
-            // Restart the loop
             cancelAnimationFrame(animationId);
             gameLoop(performance.now());
         };
@@ -302,6 +307,7 @@
                     <li>XP: ${Math.floor(gameState.player.xp)}/${gameState.player.xpToNext}</li>
                     <li>Shield Yield: ${gameState.player.shield.yield.toFixed(2)}</li>
                     <li>Unlocked Spells: ${Array.from(gameState.player.unlocked).join(', ')}</li>
+                    <li>Selected Spell: ${gameState.player.selectedSpell}</li>
                     <li>Spells:</li><ul>
             `;
             for (let key of [1,2,3,4,5,6,7,8,9,10,11,12,13,14]) {
@@ -320,7 +326,6 @@
             if (gameState.gameOver) restart();
         };
 
-        // Save/Load
         function loadSave() {
             const saved = localStorage.getItem('alternateSave');
             if (saved) {
@@ -328,8 +333,8 @@
                 gameState.player = { ...gameState.player, ...data.player };
                 gameState.player.unlocked = new Set(data.player.unlocked || [1]);
                 gameState.player.usedUpgrades = new Set(data.player.usedUpgrades);
+                gameState.player.selectedSpell = data.player.selectedSpell || 1;
             } else {
-                // New game defaults
                 gameState.player.unlocked = new Set([1]);
                 for (let key of [2,3,4,5,6,7,8,9,10,11,12,13,14]) {
                     gameState.player.spells[key].cooldown = Infinity;
@@ -348,7 +353,6 @@
             localStorage.setItem('alternateSave', JSON.stringify(saveData));
         }
 
-        // Generate wave or boss
         function generateWave(level) {
             gameState.enemies = [];
             gameState.bosses = [];
@@ -362,8 +366,10 @@
                     atk: 30 + level * 10, def: 20 + level * 5, pl: level,
                     color: '#f00',
                     type: 'Boss Magician',
-                    lastAttack: 0, attackCooldown: 1500,
-                    lastSpell: 0, spellCooldown: 2000,
+                    lastAttack: Date.now(),
+                    attackCooldown: 1500,
+                    lastSpell: Date.now(),
+                    spellCooldown: 2000,
                     aiState: 'chase',
                     dodgeDir: { x: 0, y: 0 },
                     slow: 0,
@@ -381,8 +387,10 @@
                         atk: 10 + level * 5, def: 5 + level * 2, pl: Math.floor(level / 2),
                         color: `hsl(${level * 30}, 70%, 50%)`,
                         type: ['Fire Mage', 'Ice Sorcerer', 'Shadow Warlock', 'Storm Caller', 'Arcane Beast'][level % 5],
-                        lastAttack: 0, attackCooldown: 2000 - level * 50,
-                        lastSpell: 0, spellCooldown: 3000 - level * 100,
+                        lastAttack: Date.now(),
+                        attackCooldown: 2000 - level * 50,
+                        lastSpell: Date.now(),
+                        spellCooldown: 3000 - level * 100,
                         aiState: 'chase',
                         dodgeDir: { x: 0, y: 0 },
                         slow: 0,
@@ -393,22 +401,38 @@
             }
         }
 
-        // Input
+        function cycleSpell() {
+            const unlockedList = Array.from(gameState.player.unlocked).filter(k => gameState.player.spells[k].cooldown < Infinity).sort((a, b) => {
+                const specialA = gameState.player.spells[a].special ? -1 : 1;
+                const specialB = gameState.player.spells[b].special ? -1 : 1;
+                return specialA - specialB || a - b;
+            });
+            const currentIdx = unlockedList.indexOf(gameState.player.selectedSpell);
+            const nextIdx = (currentIdx + 1) % unlockedList.length;
+            gameState.player.selectedSpell = unlockedList[nextIdx];
+            updateSpellUI();
+        }
+
+        function updateSpellUI() {
+            for (let i = 1; i <= 14; i++) {
+                const row = document.getElementById(`spell-row-${i}`);
+                if (!row) continue;
+                const spell = gameState.player.spells[i];
+                const unlocked = gameState.player.unlocked.has(i);
+                const cd = unlocked ? (spell.cooldown / 1000).toFixed(1) : '∞';
+                const status = unlocked ? 'UNLOCKED' : 'LOCKED';
+                const keyStr = i < 10 ? i : i === 10 ? 'C' : i === 11 ? 'V' : i === 12 ? 'B' : i === 13 ? 'N' : 'M';
+                row.innerHTML = `${keyStr}: ${spell.name} (CD: ${cd}s) [${status}]`;
+                row.classList.toggle('selected', i === gameState.player.selectedSpell);
+                if (spell.special) row.classList.add('special');
+            }
+        }
+
         window.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
             gameState.keys[key] = true;
             if (key === 'r' && gameState.currentScreen === 'game') restart();
-            // Spell keys
-            let spellKey = null;
-            if (key >= '1' && key <= '9') spellKey = parseInt(key);
-            else if (key === 'c') spellKey = 10;
-            else if (key === 'v') spellKey = 11;
-            else if (key === 'b') spellKey = 12;
-            else if (key === 'n') spellKey = 13;
-            else if (key === 'm') spellKey = 14;
-            if (spellKey && gameState.currentScreen === 'game' && !gameState.gameOver && !gameState.paused) {
-                castSpell(spellKey);
-            }
+            if (key === ',' && gameState.currentScreen === 'game' && !gameState.paused && !gameState.gameOver) cycleSpell();
         });
         window.addEventListener('keyup', (e) => {
             gameState.keys[e.key.toLowerCase()] = false;
@@ -417,6 +441,11 @@
             const rect = canvas.getBoundingClientRect();
             gameState.mouseX = e.clientX - rect.left;
             gameState.mouseY = e.clientY - rect.top;
+        });
+        canvas.addEventListener('click', (e) => {
+            if (gameState.currentScreen === 'game' && !gameState.gameOver && !gameState.paused) {
+                castSpell(gameState.player.selectedSpell);
+            }
         });
 
         function castSpell(key) {
@@ -440,7 +469,7 @@
                         addParticles(ent.x, ent.y, 'beam', 10);
                     }
                 });
-            } else if (['projectile', 'homing', 'homing_missile'].includes(spell.type)) {
+            } else if (spell.type === 'projectile' || spell.type === 'homing' || spell.type === 'homing_missile') {
                 gameState.projectiles.push({
                     x: gameState.player.x, y: gameState.player.y,
                     vx: dirX * 8, vy: dirY * 8,
@@ -497,24 +526,22 @@
                     }
                 });
             } else if (spell.type === 'buff_speed') {
-                // Temp speed boost
                 gameState.player.speed *= 2;
-                setTimeout(() => gameState.player.speed /= 2, 5000);
-            } // Add more types as needed for recursive, shield_proj, etc.
+                setTimeout(() => { if (gameState.player) gameState.player.speed /= 2; }, 5000);
+            }
 
             gameState.player.mana -= spell.cost;
             spell.cooldown = spell.maxCd;
             updateUI();
         }
 
-        // Line intersect (simplified)
         function lineIntersectsRect(x1, y1, x2, y2, rx, ry, rw, rh) {
             const distToLine = Math.abs((y2 - y1) * (rx + rw/2 - x1) - (x2 - x1) * (ry + rh/2 - y1)) / Math.sqrt((y2 - y1)**2 + (x2 - x1)**2);
             return distToLine < Math.max(rw, rh) / 2 && Math.min(x1, x2) < rx + rw && Math.max(x1, x2) > rx && Math.min(y1, y2) < ry + rh && Math.max(y1, y2) > ry;
         }
 
         function addParticles(x, y, type, num = 5) {
-            const colors = { beam: '#fff', ice: '#0ff', lightning: '#ff0', breaker: '#f0f', wave: '#00f', shield: '#0f0' };
+            const colors = { beam: '#fff', ice: '#0ff', lightning: '#ff0', breaker: '#f0f', wave: '#00f', shield: '#0f0', fire: '#f80' };
             for (let i = 0; i < num; i++) {
                 gameState.particles.push({
                     x, y,
@@ -530,11 +557,12 @@
         function updatePlayer(dt) {
             if (gameState.currentScreen !== 'game') return;
 
-            // Shield
             const space = gameState.keys[' '];
             gameState.player.shield.active = space;
+            if (!space) {
+                gameState.player.shield.strength = Math.min(gameState.player.maxHealth, gameState.player.shield.strength + dt * 50);
+            }
 
-            // Movement
             const up = gameState.keys['w'] || gameState.keys['arrowup'];
             const down = gameState.keys['s'] || gameState.keys['arrowdown'];
             const left = gameState.keys['a'] || gameState.keys['arrowleft'];
@@ -550,23 +578,72 @@
                 gameState.player.y += (my / moveDist) * gameState.player.speed * dt * 60;
             }
 
-            // Regen
             const regen = gameState.player.manaRegen || 20;
             gameState.player.mana = Math.min(gameState.player.maxMana, gameState.player.mana + dt * regen);
             Object.values(gameState.player.spells).forEach(s => s.cooldown = Math.max(0, s.cooldown - dt * 1000));
 
-            // Bounds
             gameState.player.x = Math.max(10, Math.min(canvas.width - 30, gameState.player.x));
             gameState.player.y = Math.max(10, Math.min(canvas.height - 30, gameState.player.y));
         }
 
-        // ... (updateEntities, updateProjectiles, updateBeams, updateParticles, addXP, levelUp, showLevelUp, selectUpgrade, gameOver, restart, updateUI, draw, gameLoop remain similar, with adjustments for new spells and keys)
-
         function updateEntities(entities, dt, isBoss = false) {
-            // Similar to previous, omitted for brevity
             entities.forEach((ent, idx) => {
-                // AI, movement, attacks as before
-                // ...
+                const speedMod = ent.slow > 0 ? 0.5 : 1;
+                ent.slow = Math.max(0, ent.slow - dt * 1000);
+
+                const dx = gameState.player.x - ent.x;
+                const dy = gameState.player.y - ent.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                const aiComplexity = Math.min(ent.pl || 1, 5);
+                if (Date.now() - ent.lastSpell > ent.spellCooldown) {
+                    const spellTypes = ['projectile'];
+                    if (aiComplexity >= 2) spellTypes.push('multi');
+                    if (aiComplexity >= 3) spellTypes.push('beam');
+                    if (aiComplexity >= 4) spellTypes.push('chain');
+                    if (aiComplexity >= 5) spellTypes.push('aoe_break');
+                    const spellType = spellTypes[Math.floor(Math.random() * spellTypes.length)];
+                    const velX = (dx / dist) * 5;
+                    const velY = (dy / dist) * 5;
+                    gameState.enemyProjectiles.push({
+                        x: ent.x, y: ent.y, vx: velX, vy: velY,
+                        damage: ent.atk, life: 1000, color: ent.color
+                    });
+                    ent.lastSpell = Date.now();
+                }
+                if (Math.random() < 0.02 * aiComplexity) {
+                    ent.aiState = 'dodge';
+                    ent.dodgeDir.x = (Math.random() - 0.5) * 2;
+                    ent.dodgeDir.y = (Math.random() - 0.5) * 2;
+                } else {
+                    ent.aiState = 'chase';
+                }
+
+                if (ent.aiState === 'chase' && dist > 30) {
+                    ent.x += (dx / dist) * ent.speed * speedMod * dt * 60;
+                    ent.y += (dy / dist) * ent.speed * speedMod * dt * 60;
+                } else if (ent.aiState === 'dodge') {
+                    ent.x += ent.dodgeDir.x * ent.speed * 2 * speedMod * dt * 60;
+                    ent.y += ent.dodgeDir.y * ent.speed * 2 * speedMod * dt * 60;
+                    if (Math.random() < 0.1) ent.aiState = 'chase';
+                }
+
+                if (dist < 30 && Date.now() - ent.lastAttack > ent.attackCooldown) {
+                    let dmg = Math.max(0, ent.atk - gameState.player.def);
+                    if (gameState.player.shield.active && gameState.player.shield.strength > 0) {
+                        const absorbed = Math.min(dmg, gameState.player.shield.strength);
+                        gameState.player.shield.strength -= absorbed;
+                        gameState.player.mana -= absorbed * gameState.player.shield.yield;
+                        dmg -= absorbed;
+                        addParticles(gameState.player.x, gameState.player.y, 'shield', 3);
+                        if (gameState.player.shield.strength <= 0) gameState.player.shield.active = false;
+                    }
+                    gameState.player.health -= dmg;
+                    ent.lastAttack = Date.now();
+                    updateUI();
+                    if (gameState.player.health <= 0) gameOver();
+                }
+
                 if (ent.health <= 0) {
                     if (isBoss) gameState.bosses.splice(idx, 1);
                     else gameState.enemies.splice(idx, 1);
@@ -576,7 +653,6 @@
         }
 
         function updateProjectiles(dt) {
-            // Similar, with homing for curve/homing_missile
             gameState.projectiles.forEach((proj, pidx) => {
                 if (proj.homing && proj.life > 500) {
                     let closest = null, minDist = Infinity;
@@ -595,13 +671,12 @@
                         proj.vy += (hdy / hdist) * proj.homing * dt * 60;
                     }
                 }
-                // Movement, collisions as before
                 proj.x += proj.vx * dt * 60;
                 proj.y += proj.vy * dt * 60;
                 proj.life -= dt * 1000;
                 proj.angle = Math.atan2(proj.vy, proj.vx);
 
-                // Collisions with entities
+                let hit = false;
                 [...gameState.enemies, ...gameState.bosses].forEach(ent => {
                     if (Math.abs(proj.x - ent.x) < 15 && Math.abs(proj.y - ent.y) < 15) {
                         let dmg = Math.max(0, proj.damage - ent.def);
@@ -615,7 +690,6 @@
                         gameState.projectiles.splice(pidx, 1);
                         addParticles(ent.x, ent.y, proj.type || 'fire', 5);
                         if (proj.slow) ent.slow = 2000;
-                        // Chain for lightning
                         if (proj.type === 'lightning') {
                             [...gameState.enemies, ...gameState.bosses].forEach(other => {
                                 if (other !== ent && Math.hypot(other.x - ent.x, other.y - ent.y) < 50) {
@@ -624,16 +698,16 @@
                                 }
                             });
                         }
-                        return true;
+                        hit = true;
                     }
                 });
+                if (hit) return;
 
                 if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height || proj.life <= 0) {
                     gameState.projectiles.splice(pidx, 1);
                 }
             });
 
-            // Enemy projectiles shield logic as before
             gameState.enemyProjectiles.forEach((proj, eidx) => {
                 proj.x += proj.vx * dt * 60;
                 proj.y += proj.vy * dt * 60;
@@ -653,6 +727,7 @@
                     gameState.player.health -= dmg;
                     gameState.enemyProjectiles.splice(eidx, 1);
                     if (gameState.player.health <= 0) gameOver();
+                    updateUI();
                 }
 
                 if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height || proj.life <= 0) {
@@ -705,7 +780,7 @@
         function showLevelUp() {
             gameState.paused = true;
             const available = gameState.upgradePool.filter(u => !gameState.player.usedUpgrades.has(u.id));
-            if (available.length === 0) available = gameState.upgradePool.filter(u => u.id.startsWith('unlock_')); // Prioritize unlocks if depleted
+            if (available.length === 0) available = gameState.upgradePool.filter(u => u.id.startsWith('unlock_'));
             const choices = [];
             while (choices.length < 3 && available.length > 0) {
                 const randIdx = Math.floor(Math.random() * available.length);
@@ -727,7 +802,8 @@
             levelUpDiv.style.display = 'none';
             gameState.paused = false;
             saveGame();
-            updateUI(); // Refresh spell CDs/status
+            updateSpellUI();
+            updateUI();
         };
 
         function gameOver() {
@@ -744,24 +820,24 @@
                 level: 1, xp: 0, xpToNext: 100,
                 pl: 1, atk: 20, def: 10,
                 unlocked: new Set([1]),
+                selectedSpell: 1,
                 spells: {
-                    1: { name: 'Magic Shot', damage: 20, cost: 20, cooldown: 0, maxCd: 500, type: 'projectile' },
-                    // ... all other spells with cooldown: Infinity
-                    2: { name: 'Tri-Shot', damage: 15, cost: 25, cooldown: Infinity, maxCd: 700, type: 'multi' },
-                    3: { name: 'Beam Shot', damage: 30, cost: 30, cooldown: Infinity, maxCd: 1500, type: 'beam' },
-                    4: { name: 'Ice Shard', damage: 15, cost: 15, cooldown: Infinity, maxCd: 800, type: 'ice' },
-                    5: { name: 'Lightning', damage: 25, cost: 25, cooldown: Infinity, maxCd: 1000, type: 'chain' },
-                    6: { name: 'Curve Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 900, type: 'homing', homingStrength: 0.05 },
-                    7: { name: 'Shield Breaker', damage: 0, cost: 40, cooldown: Infinity, maxCd: 2000, type: 'aoe_break', breakStrength: 50 },
-                    8: { name: 'Homing Missile', damage: 35, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'homing_missile' },
-                    9: { name: 'Force Wave', damage: 20, cost: 30, cooldown: Infinity, maxCd: 1100, type: 'wave', aoeRadius: 50 },
-                    10: { name: 'Penta Shot', damage: 12, cost: 30, cooldown: Infinity, maxCd: 1000, type: 'multi_penta' },
-                    11: { name: 'Recursive Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 800, type: 'recursive' },
-                    12: { name: 'Shield Attack', damage: 40, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'shield_proj' },
-                    13: { name: 'Beta Laser', damage: 50, cost: 50, cooldown: Infinity, maxCd: 2000, type: 'beta_beam' },
-                    14: { name: 'Super Speed', damage: 0, cost: 20, cooldown: Infinity, maxCd: 5000, type: 'buff_speed' }
+                    1: { name: 'Magic Shot', damage: 20, cost: 20, cooldown: 0, maxCd: 500, type: 'projectile', special: false },
+                    2: { name: 'Tri-Shot', damage: 15, cost: 25, cooldown: Infinity, maxCd: 700, type: 'multi', special: false },
+                    3: { name: 'Beam Shot', damage: 30, cost: 30, cooldown: Infinity, maxCd: 1500, type: 'beam', special: true },
+                    4: { name: 'Ice Shard', damage: 15, cost: 15, cooldown: Infinity, maxCd: 800, type: 'ice', special: false },
+                    5: { name: 'Lightning', damage: 25, cost: 25, cooldown: Infinity, maxCd: 1000, type: 'chain', special: true },
+                    6: { name: 'Curve Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 900, type: 'homing', special: true, homingStrength: 0.05 },
+                    7: { name: 'Shield Breaker', damage: 0, cost: 40, cooldown: Infinity, maxCd: 2000, type: 'aoe_break', special: true, breakStrength: 50 },
+                    8: { name: 'Homing Missile', damage: 35, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'homing_missile', special: true },
+                    9: { name: 'Force Wave', damage: 20, cost: 30, cooldown: Infinity, maxCd: 1100, type: 'wave', special: true, aoeRadius: 50 },
+                    10: { name: 'Penta Shot', damage: 12, cost: 30, cooldown: Infinity, maxCd: 1000, type: 'multi_penta', special: true },
+                    11: { name: 'Recursive Shot', damage: 25, cost: 25, cooldown: Infinity, maxCd: 800, type: 'recursive', special: true },
+                    12: { name: 'Shield Attack', damage: 40, cost: 35, cooldown: Infinity, maxCd: 1200, type: 'shield_proj', special: true },
+                    13: { name: 'Beta Laser', damage: 50, cost: 50, cooldown: Infinity, maxCd: 2000, type: 'beta_beam', special: true },
+                    14: { name: 'Super Speed', damage: 0, cost: 20, cooldown: Infinity, maxCd: 5000, type: 'buff_speed', special: true }
                 },
-                shield: { active: false, strength: 100, absorbed: 0, yield: 1.0, omni: false },
+                shield: { active: false, strength: 100, yield: 1.0, omni: false },
                 usedUpgrades: new Set(),
                 manaRegen: 20
             };
@@ -774,6 +850,7 @@
             gameState.gameOver = false;
             gameState.paused = false;
             generateWave(1);
+            updateSpellUI();
             updateUI();
             localStorage.removeItem('alternateSave');
         }
@@ -788,13 +865,7 @@
             uiLevel.textContent = gameState.player.level;
             uiXP.textContent = Math.floor(gameState.player.xp);
             uiNext.textContent = gameState.player.xpToNext;
-            for (let i = 1; i <= 14; i++) {
-                const spell = gameState.player.spells[i];
-                const cdEl = document.getElementById(`cd${i < 10 ? i : i === 10 ? '10' : i === 11 ? '11' : i === 12 ? '12' : i === 13 ? '13' : '14'}`);
-                cdEl.textContent = gameState.player.unlocked.has(i) ? (spell.cooldown / 1000).toFixed(1) : '∞';
-                const row = cdEl.parentElement;
-                row.innerHTML = `${i < 10 ? i : i === 10 ? 'C' : i === 11 ? 'V' : i === 12 ? 'B' : i === 13 ? 'N' : 'M'}: ${spell.name} (CD: <span id="cd${i < 10 ? i : i === 10 ? '10' : i === 11 ? '11' : i === 12 ? '12' : i === 13 ? '13' : '14'}">${cdEl.textContent}</span>s) [${gameState.player.unlocked.has(i) ? 'UNLOCKED' : 'LOCKED'}]`;
-            }
+            updateSpellUI();
         }
 
         function draw() {
@@ -802,7 +873,6 @@
 
             if (gameState.currentScreen !== 'game') return;
 
-            // Shield draw
             if (gameState.player.shield.active) {
                 ctx.strokeStyle = gameState.player.shield.omni ? '#0ff' : '#00f';
                 ctx.lineWidth = 3;
@@ -811,10 +881,8 @@
                 ctx.stroke();
             }
 
-            // Player draw
             drawStickFigure(gameState.player.x, gameState.player.y, '#00f', true);
 
-            // Entities draw with health bars
             [...gameState.enemies, ...gameState.bosses].forEach(ent => {
                 const size = ent.width > 20 ? 1.5 : 1;
                 drawStickFigure(ent.x, ent.y, ent.color, ent.type.includes('Mage'), size);
@@ -824,21 +892,41 @@
                 ctx.fillRect(ent.x - 15 * size, ent.y - 35 * size, (ent.health / ent.maxHealth) * 30 * size, 3);
             });
 
-            // Projectiles draw (simplified for brevity, add unique designs per type)
             gameState.projectiles.forEach(proj => {
                 ctx.save();
                 ctx.translate(proj.x, proj.y);
                 ctx.rotate(proj.angle);
-                ctx.fillStyle = proj.type.includes('beam') ? '#fff' : proj.type.includes('ice') ? '#0ff' : proj.type.includes('lightning') ? '#ff0' : '#f80';
+                ctx.fillStyle = proj.type.includes('beam') ? '#fff' : proj.type.includes('ice') ? '#0ff' : proj.type.includes('lightning') ? '#ff0' : proj.type.includes('wave') ? '#00f' : '#f80';
                 ctx.beginPath();
                 ctx.arc(0, 0, 4, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
             });
 
-            // Enemy proj, beams, particles as before (omitted for brevity)
+            gameState.enemyProjectiles.forEach(proj => {
+                ctx.fillStyle = proj.color;
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
 
-            // Aim line
+            gameState.beams.forEach(beam => {
+                ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(beam.startX, beam.startY);
+                ctx.lineTo(beam.endX, beam.endY);
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            });
+
+            gameState.particles.forEach(part => {
+                ctx.fillStyle = part.color;
+                ctx.globalAlpha = part.life / 500;
+                ctx.fillRect(part.x - part.size, part.y - part.size, part.size * 2, part.size * 2);
+                ctx.globalAlpha = 1;
+            });
+
             ctx.strokeStyle = '#888';
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -884,7 +972,6 @@
             animationId = requestAnimationFrame(gameLoop);
         }
 
-        // Init
         mainMenu.style.display = 'block';
         requestAnimationFrame(gameLoop);
     </script>
