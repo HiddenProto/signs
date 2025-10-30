@@ -3,181 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rhythm Dodge - Professional Edition</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <title>Rhythm Dodge</title>
     <style>
         body { 
             margin: 0; 
-            background: linear-gradient(135deg, #0c0c0c, #1a1a2e, #16213e); 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-            font-family: 'Orbitron', monospace; 
-            color: #00ff88; 
+            background: #000; 
             overflow: hidden;
+            font-family: monospace; 
+            color: #fff; 
         }
         canvas { 
-            border: 2px solid #00ff88; 
-            border-radius: 10px; 
-            background: radial-gradient(circle at center, #000428, #004e92); 
-            box-shadow: 0 0 20px #00ff88; 
-            cursor: crosshair;
-        }
-        #menu { 
-            position: absolute; 
-            top: 50%; 
-            left: 50%; 
-            transform: translate(-50%, -50%); 
-            text-align: center; 
-            z-index: 10; 
-            background: rgba(0,0,0,0.9); 
-            padding: 30px; 
-            border-radius: 15px; 
-            border: 1px solid #00ff88; 
-            box-shadow: 0 0 30px rgba(0,255,136,0.5); 
-            transition: opacity 0.3s;
-        }
-        #menu h1 { 
-            font-size: 3em; 
-            margin-bottom: 20px; 
-            text-shadow: 0 0 10px #00ff88; 
-            letter-spacing: 2px;
-        }
-        button { 
-            padding: 12px 24px; 
-            font-size: 1.1em; 
-            background: linear-gradient(45deg, #ff0080, #00ff88); 
-            border: none; 
-            color: #000; 
-            cursor: pointer; 
-            border-radius: 25px; 
-            margin: 10px; 
-            font-weight: 700; 
-            transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 15px rgba(0,255,136,0.3);
-        }
-        button:hover { 
-            transform: scale(1.05); 
-            box-shadow: 0 6px 20px rgba(0,255,136,0.5);
-        }
-        button:disabled { 
-            background: #666; 
-            cursor: not-allowed; 
-            transform: none;
-            box-shadow: none;
-        }
-        #shop { display: none; }
-        #shop ul { list-style: none; padding: 0; }
-        #shop li { 
-            margin: 15px 0; 
-            padding: 10px; 
-            background: rgba(0,255,136,0.1); 
-            border-radius: 10px; 
-            border-left: 3px solid #00ff88;
-        }
-        #info { 
-            position: absolute; 
-            top: 10px; 
-            left: 10px; 
-            font-size: 0.9em; 
-            background: rgba(0,0,0,0.7); 
-            padding: 10px; 
-            border-radius: 5px; 
-            border: 1px solid #00ff88;
-        }
-        #creds { 
-            position: absolute; 
-            top: 10px; 
-            right: 10px; 
-            font-size: 1.2em; 
-            font-weight: 700; 
-            background: rgba(0,0,0,0.7); 
-            padding: 10px; 
-            border-radius: 5px; 
-            border: 1px solid #00ff88;
-            text-shadow: 0 0 5px #00ff88;
-        }
-        #hud { 
-            position: absolute; 
-            top: 50px; 
-            left: 10px; 
-            font-size: 1em; 
-            color: #00ff88; 
-            text-shadow: 0 0 5px #00ff88;
-        }
-        #dashIndicator { 
-            position: absolute; 
-            bottom: 20px; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            font-size: 1em; 
-            color: #ff0080; 
-            text-shadow: 0 0 5px #ff0080;
+            display: block; 
         }
     </style>
 </head>
 <body>
-    <div id="info">
-        <p><strong>Mic Sync:</strong> Allow mic access to capture your computer's audio (e.g., YouTube music). Analyzes raw bass for beat-synced attacks—no filtering!</p>
-        <p><strong>Creds:</strong> Earn 1 per 10 score + bonus 50 for 100+ score. Spend in Shop!</p>
-        <label>BPM Fallback: <input type="number" id="bpm" value="120" min="60" max="200" style="background: #000; color: #00ff88; border: 1px solid #00ff88;"></label>
-    </div>
-    <div id="creds">Creds: <span id="credsValue">0</span></div>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="hud" style="display: none;">
-        <div>Score: <span id="scoreDisplay">0</span></div>
-        <div>Dash Ready: <span id="dashReady">Yes</span></div>
-    </div>
-    <div id="dashIndicator" style="display: none;">Hold SHIFT to Dash (Cooldown: 2s)</div>
-    <div id="menu">
-        <h1>Rhythm Dodge</h1>
-        <p>Dodge music-synced attacks! Mouse/Touch move. SHIFT to dash through hazards.</p>
-        <button onclick="showShop()">Shop</button>
-        <button onclick="startGame()">Play (Mic Sync)</button>
-        <div id="shop">
-            <h2>Skins Arsenal</h2>
-            <p>Upgrade your cube's style. Earn creds by surviving longer!</p>
-            <ul id="skinList"></ul>
-            <button onclick="backToMenu()">Back to Menu</button>
-        </div>
-    </div>
+    <canvas id="gameCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const menu = document.getElementById('menu');
-        const shopDiv = document.getElementById('shop');
-        const skinList = document.getElementById('skinList');
-        const bpmInput = document.getElementById('bpm');
-        const credsSpan = document.getElementById('credsValue');
-        const scoreDisplay = document.getElementById('scoreDisplay');
-        const dashReadySpan = document.getElementById('dashReady');
-        const hud = document.getElementById('hud');
-        const dashIndicator = document.getElementById('dashIndicator');
+
+        // Resize canvas to full screen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
         // Game state
-        let gameState = 'menu';
-        let player = { x: 400, y: 300, size: 12 };
+        let gameState = 'menu'; // 'menu', 'shop', 'playing', 'gameOver'
+        let player = { x: canvas.width / 2, y: canvas.height / 2, size: 10, vx: 0, vy: 0, speed: 5 };
         let attacks = [];
         let score = 0;
+        let lives = 5;
         let creds = parseInt(localStorage.getItem('creds')) || 0;
-        let bpm = parseInt(bpmInput.value);
-        let spawnInterval = 60000 / bpm;
-        let lastSpawn = 0;
-        let selectedSkin = localStorage.getItem('selectedSkin') || 'Default Square';
+        let selectedSkin = localStorage.getItem('selectedSkin') || 'Default Cube';
         let isDashing = false;
         let dashCooldown = 0;
         let dashDuration = 0;
-
-        // Audio for mic sync
-        let audioContext;
-        let analyser;
-        let microphone;
-        let rafId;
-        let beatThreshold = 0.7; // Adjust for sensitivity
+        let invincibleTime = 0;
+        let lastSpawn = 0;
+        let beatThreshold = 0.7;
         let lastBeatTime = 0;
-        let beatInterval = 500; // Min time between beats (ms)
+        let beatInterval = 500;
+
+        // Audio
+        let audioContext, analyser, microphone, rafId;
 
         // Skins
         const skins = [
@@ -186,93 +59,55 @@
             { name: 'Cyber Blue', shape: 'square', color: '#00bfff', price: 100 },
             { name: 'Lime Pulse', shape: 'circle', color: '#00ff41', price: 75 },
             { name: 'Violet Star', shape: 'star', color: '#8a2be2', price: 150 },
-            { name: 'Golden Dash', shape: 'square', color: '#ffd700', price: 200 } // New premium
+            { name: 'Golden Dash', shape: 'square', color: '#ffd700', price: 200 }
         ];
-
         let ownedSkins = JSON.parse(localStorage.getItem('ownedSkins')) || ['Default Cube'];
 
-        function updateCreds() {
-            credsSpan.textContent = creds;
-            localStorage.setItem('creds', creds.toString());
-        }
-        updateCreds();
-
-        // Mouse/Touch movement
-        function updatePlayerPos(e) {
-            if (gameState !== 'playing' || isDashing) return;
-            const rect = canvas.getBoundingClientRect();
-            let clientX, clientY;
-            if (e.touches) {
-                e.preventDefault();
-                const touch = e.touches[0];
-                clientX = touch.clientX;
-                clientY = touch.clientY;
-            } else {
-                clientX = e.clientX;
-                clientY = e.clientY;
-            }
-            player.x = clientX - rect.left;
-            player.y = clientY - rect.top;
-            player.x = Math.max(player.size/2, Math.min(800 - player.size/2, player.x));
-            player.y = Math.max(player.size/2, Math.min(600 - player.size/2, player.y));
-        }
-        canvas.addEventListener('mousemove', updatePlayerPos);
-        canvas.addEventListener('touchmove', updatePlayerPos);
-
-        // Dash mechanic
+        // Keys
         const keys = {};
-        document.addEventListener('keydown', (e) => {
-            keys[e.code] = true;
-            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
-                if (gameState === 'playing' && dashCooldown <= 0 && !isDashing) {
-                    startDash();
-                }
-            }
-            if (e.code === 'Space' && (gameState === 'gameOver' || gameState === 'menu' || gameState === 'shop')) {
-                e.preventDefault();
-                if (gameState === 'gameOver') startGame();
-                else if (gameState === 'shop') backToMenu();
-            }
-        });
+        document.addEventListener('keydown', (e) => { keys[e.code] = true; });
         document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-        function startDash() {
-            isDashing = true;
-            dashDuration = 200; // 200ms invincibility
-            dashCooldown = 2000; // 2s cooldown
-            // Optional: Boost speed towards mouse, but for simplicity, just invincible move
-            updateDashDisplay();
-        }
+        // Mouse for UI
+        let mouseX = 0, mouseY = 0;
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+        canvas.addEventListener('click', (e) => handleClick(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top));
 
-        function updateDash() {
-            if (isDashing) {
-                dashDuration -= 16; // ~60fps
-                if (dashDuration <= 0) {
-                    isDashing = false;
+        function handleClick(x, y) {
+            if (gameState === 'menu') {
+                // Play button
+                if (x > canvas.width/2 - 50 && x < canvas.width/2 + 50 && y > canvas.height/2 + 50 && y < canvas.height/2 + 80) {
+                    startGame();
                 }
-            }
-            if (dashCooldown > 0) {
-                dashCooldown -= 16;
-                updateDashDisplay();
-            } else if (!isDashing) {
-                dashReadySpan.textContent = 'Yes';
-                dashReadySpan.style.color = '#00ff88';
-            }
-        }
-
-        function updateDashDisplay() {
-            if (gameState === 'playing') {
-                if (isDashing) {
-                    dashReadySpan.textContent = 'Dashing!';
-                    dashReadySpan.style.color = '#ffd700';
-                } else if (dashCooldown > 0) {
-                    dashReadySpan.textContent = `${Math.ceil(dashCooldown/1000)}s`;
-                    dashReadySpan.style.color = '#ff0080';
+                // Shop button
+                if (x > canvas.width/2 - 50 && x < canvas.width/2 + 50 && y > canvas.height/2 && y < canvas.height/2 + 30) {
+                    showShop();
                 }
+            } else if (gameState === 'shop') {
+                // Back button
+                if (x > canvas.width/2 - 50 && x < canvas.width/2 + 50 && y > canvas.height - 60 && y < canvas.height - 30) {
+                    backToMenu();
+                }
+                // Skin buttons
+                skins.forEach((skin, i) => {
+                    const btnY = 200 + i * 40;
+                    if (x > canvas.width/2 - 60 && x < canvas.width/2 + 60 && y > btnY && y < btnY + 30) {
+                        buyOrSelect(skin.name);
+                    }
+                });
+            } else if (gameState === 'gameOver') {
+                startGame();
             }
         }
 
-        // Audio setup
+        function updateCreds() {
+            localStorage.setItem('creds', creds.toString());
+        }
+
         async function setupAudio() {
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -280,8 +115,7 @@
                 microphone = audioContext.createMediaStreamSource(stream);
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 256;
-                const bufferLength = analyser.frequencyBinCount;
-                const dataArray = new Uint8Array(bufferLength);
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
                 microphone.connect(analyser);
 
                 function detectBeat() {
@@ -290,54 +124,29 @@
                         return;
                     }
                     analyser.getByteFrequencyData(dataArray);
-                    // Raw bass energy (low freqs for beats)
                     let bassEnergy = 0;
-                    for (let i = 0; i < 20; i++) { // Low frequencies
-                        bassEnergy += dataArray[i];
-                    }
+                    for (let i = 0; i < 20; i++) bassEnergy += dataArray[i];
                     bassEnergy /= 20;
                     const now = Date.now();
                     if (bassEnergy > beatThreshold * 255 && now - lastBeatTime > beatInterval) {
-                        spawnAttack(); // Beat-synced spawn!
+                        spawnAttack();
                         lastBeatTime = now;
-                        score++; // Score on beat dodge
-                        scoreDisplay.textContent = score;
+                        score++;
                     }
                     rafId = requestAnimationFrame(detectBeat);
                 }
                 detectBeat();
             } catch (err) {
-                console.error('Mic access denied:', err);
-                alert('Mic access denied—falling back to BPM timer. Grant permission for true audio sync!');
-                // Fallback to BPM
+                console.error('Mic access denied');
             }
         }
 
         function showShop() {
             gameState = 'shop';
-            shopDiv.style.display = 'block';
-            renderSkinList();
         }
 
         function backToMenu() {
             gameState = 'menu';
-            shopDiv.style.display = 'none';
-        }
-
-        function renderSkinList() {
-            skinList.innerHTML = '';
-            skins.forEach(skin => {
-                const li = document.createElement('li');
-                const owned = ownedSkins.includes(skin.name);
-                li.innerHTML = `
-                    <span style="color: ${skin.color}; font-weight: 900; text-shadow: 0 0 5px ${skin.color};">${skin.name}</span> 
-                    (${skin.shape}) - ${owned ? 'Owned' : `Price: ${skin.price} creds`}
-                    <button onclick="buyOrSelect('${skin.name}')" ${owned ? '' : 'disabled'}>
-                        ${owned ? 'Equip' : 'Buy'}
-                    </button>
-                `;
-                skinList.appendChild(li);
-            });
         }
 
         function buyOrSelect(skinName) {
@@ -346,127 +155,295 @@
             if (owned) {
                 selectedSkin = skinName;
                 localStorage.setItem('selectedSkin', selectedSkin);
-                alert(`Equipped ${skinName}! Glows with your beats.`);
             } else if (creds >= skin.price) {
                 creds -= skin.price;
                 ownedSkins.push(skinName);
                 localStorage.setItem('ownedSkins', JSON.stringify(ownedSkins));
                 updateCreds();
-                alert(`Acquired ${skinName}! Equip it now.`);
-                renderSkinList();
-            } else {
-                alert('Creds low—dodge more beats to earn!');
+                selectedSkin = skinName;
+                localStorage.setItem('selectedSkin', selectedSkin);
             }
         }
 
         async function startGame() {
-            await setupAudio(); // Init mic
+            await setupAudio();
             gameState = 'playing';
-            menu.style.display = 'none';
-            hud.style.display = 'block';
-            dashIndicator.style.display = 'block';
+            player.x = canvas.width / 2;
+            player.y = canvas.height / 2;
             attacks = [];
             score = 0;
-            player.x = 400;
-            player.y = 300;
-            lastSpawn = Date.now();
+            lives = 5;
             lastBeatTime = 0;
             isDashing = false;
             dashCooldown = 0;
-            scoreDisplay.textContent = score;
-            updateDashDisplay();
-            bpm = parseInt(bpmInput.value);
-            spawnInterval = 60000 / bpm; // Fallback if no mic
+            invincibleTime = 0;
+            lastSpawn = Date.now();
             if (audioContext) {
-                // Use beat detection over timer
                 setInterval(() => {
                     if (Date.now() - lastBeatTime > beatInterval * 2) {
-                        spawnAttack(); // Fallback spawn if quiet
+                        spawnAttack();
                         score++;
-                        scoreDisplay.textContent = score;
                     }
-                }, spawnInterval);
+                }, 600); // Fallback ~100 BPM
             }
             gameLoop();
         }
 
         function earnCreds() {
-            let earned = Math.floor(score / 10);
-            if (score >= 100) earned += 50; // Bonus!
+            let earned = Math.floor(score / 10) + (score >= 100 ? 50 : 0);
             creds += earned;
             updateCreds();
-            alert(`Beat Sync Complete! +${earned} creds (1/10 score + milestone bonus). Total: ${creds}`);
         }
 
         function spawnAttack() {
-            const types = ['line', 'circle', 'pulse'];
+            const types = ['line', 'circle', 'pulse', 'spiral', 'wave', 'burst', 'grid', 'comet', 'vortex'];
             const type = types[Math.floor(Math.random() * types.length)];
             let attack;
             const time = Date.now() / 1000;
 
-            if (type === 'line') {
-                const side = Math.floor(Math.random() * 4);
-                let x1, y1, x2, y2;
-                switch (side) {
-                    case 0: x1 = Math.random() * 800; y1 = 0; x2 = Math.random() * 800; y2 = 600; break;
-                    case 1: x1 = 800; y1 = Math.random() * 600; x2 = 0; y2 = Math.random() * 600; break;
-                    case 2: x1 = Math.random() * 800; y1 = 600; x2 = Math.random() * 800; y2 = 0; break;
-                    case 3: x1 = 0; y1 = Math.random() * 600; x2 = 800; y2 = Math.random() * 600; break;
-                }
-                const speed = 2.5 + Math.sin(time * 2) * 1.5; // Pulsing speed
-                attack = { type: 'line', x1, y1, x2, y2, progress: 0, speed, color: `hsl(${time * 50 % 360}, 80%, 60%)` };
-            } else if (type === 'circle') {
-                const x = Math.random() * 800;
-                const y = Math.random() * 600;
-                const maxRadius = 150 + Math.random() * 100;
-                const speed = 4 + Math.cos(time) * 2;
-                attack = { type: 'circle', x, y, radius: 0, maxRadius, speed, color: `hsl(${time * 30 % 360}, 70%, 70%)` };
-            } else {
-                const x = 400 + Math.sin(time) * 100; // Slight offset
-                const y = 300 + Math.cos(time) * 50;
-                const maxRadius = 300;
-                const speed = 6 + Math.random() * 3;
-                attack = { type: 'pulse', x, y, radius: 0, maxRadius, speed, color: `hsl(${time * 100 % 360}, 90%, 50%)` };
+            switch (type) {
+                case 'line':
+                    const side = Math.floor(Math.random() * 4);
+                    let x1, y1, x2, y2;
+                    switch (side) {
+                        case 0: x1 = Math.random() * canvas.width; y1 = 0; x2 = Math.random() * canvas.width; y2 = canvas.height; break;
+                        case 1: x1 = canvas.width; y1 = Math.random() * canvas.height; x2 = 0; y2 = Math.random() * canvas.height; break;
+                        case 2: x1 = Math.random() * canvas.width; y1 = canvas.height; x2 = Math.random() * canvas.width; y2 = 0; break;
+                        case 3: x1 = 0; y1 = Math.random() * canvas.height; x2 = canvas.width; y2 = Math.random() * canvas.height; break;
+                    }
+                    attack = { type, x1, y1, x2, y2, progress: 0, speed: 2 + Math.random() * 2, color: '#fff' };
+                    break;
+                case 'circle':
+                    const cx = Math.random() * canvas.width;
+                    const cy = Math.random() * canvas.height;
+                    attack = { type, x: cx, y: cy, radius: 0, maxRadius: 100 + Math.random() * 150, speed: 3 + Math.random() * 3, color: '#fff' };
+                    break;
+                case 'pulse':
+                    attack = { type, x: canvas.width/2, y: canvas.height/2, radius: 0, maxRadius: 300, speed: 5 + Math.random() * 3, color: '#fff' };
+                    break;
+                case 'spiral':
+                    attack = { type, x: canvas.width/2, y: canvas.height/2, radius: 0, angle: 0, speed: 2, arms: 3, color: '#fff' };
+                    break;
+                case 'wave':
+                    attack = { type, x: 0, y: Math.random() * canvas.height, progress: 0, amplitude: 50, speed: 3, color: '#fff' };
+                    break;
+                case 'burst':
+                    attack = { type, x: Math.random() * canvas.width, y: Math.random() * canvas.height, angle: 0, speed: 4, rays: 8, color: '#fff' };
+                    break;
+                case 'grid':
+                    attack = { type, startX: Math.random() * canvas.width, startY: 0, spacing: 50 + Math.random() * 50, speed: 2, color: '#fff' };
+                    break;
+                case 'comet':
+                    const dir = Math.random() * Math.PI * 2;
+                    attack = { type, x: Math.random() * canvas.width, y: Math.random() * canvas.height, vx: Math.cos(dir) * 5, vy: Math.sin(dir) * 5, tail: [], color: '#fff' };
+                    break;
+                case 'vortex':
+                    attack = { type, x: canvas.width/2, y: canvas.height/2, radius: 0, angle: 0, speed: 3, pull: 0.1, color: '#fff' };
+                    break;
             }
             attacks.push(attack);
         }
 
+        function updatePlayer() {
+            if (gameState !== 'playing') return;
+            player.vx = 0;
+            player.vy = 0;
+            if (keys['KeyW'] || keys['ArrowUp']) player.vy = -player.speed;
+            if (keys['KeyS'] || keys['ArrowDown']) player.vy = player.speed;
+            if (keys['KeyA'] || keys['ArrowLeft']) player.vx = -player.speed;
+            if (keys['KeyD'] || keys['ArrowRight']) player.vx = player.speed;
+
+            // Dash on space
+            if ((keys['Space'] || keys['Space'] === false) && dashCooldown <= 0 && !isDashing) { // Space triggers
+                keys['Space'] = false; // Prevent repeat
+                startDash();
+            }
+
+            player.x += player.vx;
+            player.y += player.vy;
+            player.x = Math.max(player.size/2, Math.min(canvas.width - player.size/2, player.x));
+            player.y = Math.max(player.size/2, Math.min(canvas.height - player.size/2, player.y));
+        }
+
+        function startDash() {
+            isDashing = true;
+            dashDuration = 200;
+            dashCooldown = 2000;
+            player.speed *= 2; // Temp speed boost
+            setTimeout(() => { player.speed /= 2; }, 200);
+        }
+
+        function updateDash() {
+            if (isDashing) {
+                dashDuration -= 16;
+                if (dashDuration <= 0) {
+                    isDashing = false;
+                    player.speed /= 2;
+                }
+            }
+            if (dashCooldown > 0) dashCooldown -= 16;
+        }
+
+        function updateInvincible() {
+            if (invincibleTime > 0) {
+                invincibleTime -= 16;
+                if (invincibleTime <= 0) lives--; // Lose life after invinc
+                if (lives <= 0) gameOver();
+            }
+        }
+
         function update() {
             if (gameState !== 'playing') return;
+            updatePlayer();
             updateDash();
+            updateInvincible();
             const now = Date.now();
-
-            // Fallback spawn if no audio
-            if (!audioContext || now - lastSpawn > spawnInterval * 1.5) {
+            if (now - lastSpawn > 500) { // Fallback
                 spawnAttack();
                 lastSpawn = now;
+                score++;
             }
 
             attacks.forEach((attack, index) => {
-                if (attack.type === 'line') {
-                    attack.progress += attack.speed / 100;
-                    if (attack.progress >= 1) {
-                        attacks.splice(index, 1);
-                        return;
-                    }
-                    const currX1 = attack.x1 + (attack.x2 - attack.x1) * attack.progress;
-                    const currY1 = attack.y1 + (attack.y2 - attack.y1) * attack.progress;
-                    const currX2 = attack.x1 + (attack.x2 - attack.x1) * (attack.progress - 0.05);
-                    const currY2 = attack.y1 + (attack.y2 - attack.y1) * (attack.progress - 0.05);
-                    const dist = distanceToLine(player.x, player.y, currX1, currY1, currX2, currY2);
-                    if (dist < player.size / 2 && !isDashing) {
-                        gameOver();
-                    }
-                } else if (attack.type === 'circle' || attack.type === 'pulse') {
-                    attack.radius += attack.speed;
-                    if (attack.radius > attack.maxRadius) {
-                        attacks.splice(index, 1);
-                        return;
-                    }
-                    const dist = Math.sqrt((player.x - attack.x)**2 + (player.y - attack.y)**2);
-                    if (dist < attack.radius + player.size / 2 && !isDashing) {
-                        gameOver();
-                    }
+                // Update logic for each type
+                switch (attack.type) {
+                    case 'line':
+                        attack.progress += attack.speed / 100;
+                        if (attack.progress >= 1) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        const currX1 = attack.x1 + (attack.x2 - attack.x1) * attack.progress;
+                        const currY1 = attack.y1 + (attack.y2 - attack.y1) * attack.progress;
+                        const currX2 = attack.x1 + (attack.x2 - attack.x1) * (attack.progress - 0.05);
+                        const currY2 = attack.y1 + (attack.y2 - attack.y1) * (attack.progress - 0.05);
+                        const dist = distanceToLine(player.x, player.y, currX1, currY1, currX2, currY2);
+                        if (dist < player.size / 2 && invincibleTime <= 0 && !isDashing) {
+                            invincibleTime = 2000; // 2s invincible on hit
+                        }
+                        break;
+                    case 'circle':
+                        attack.radius += attack.speed;
+                        if (attack.radius > attack.maxRadius) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        const cdist = Math.hypot(player.x - attack.x, player.y - attack.y);
+                        if (cdist < attack.radius + player.size / 2 && invincibleTime <= 0 && !isDashing) {
+                            invincibleTime = 2000;
+                        }
+                        break;
+                    case 'pulse':
+                        attack.radius += attack.speed;
+                        if (attack.radius > attack.maxRadius) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        const pdist = Math.hypot(player.x - attack.x, player.y - attack.y);
+                        if (pdist < attack.radius + player.size / 2 && invincibleTime <= 0 && !isDashing) {
+                            invincibleTime = 2000;
+                        }
+                        break;
+                    case 'spiral':
+                        attack.radius += attack.speed;
+                        attack.angle += 0.1;
+                        if (attack.radius > Math.hypot(canvas.width, canvas.height)) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        for (let i = 0; i < attack.arms; i++) {
+                            const a = attack.angle + (i / attack.arms) * Math.PI * 2;
+                            const ex = attack.x + Math.cos(a) * attack.radius;
+                            const ey = attack.y + Math.sin(a) * attack.radius;
+                            const distS = Math.hypot(player.x - ex, player.y - ey);
+                            if (distS < 5 && invincibleTime <= 0 && !isDashing) {
+                                invincibleTime = 2000;
+                            }
+                        }
+                        break;
+                    case 'wave':
+                        attack.progress += attack.speed / canvas.width;
+                        if (attack.progress >= 1) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        const wx = attack.progress * canvas.width;
+                        const wy = attack.y + Math.sin(wx / 50) * attack.amplitude;
+                        const wdist = Math.hypot(player.x - wx, player.y - wy);
+                        if (wdist < 10 && invincibleTime <= 0 && !isDashing) {
+                            invincibleTime = 2000;
+                        }
+                        break;
+                    case 'burst':
+                        attack.angle += attack.speed / 50;
+                        if (attack.angle > Math.PI * 2) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        for (let i = 0; i < attack.rays; i++) {
+                            const a = attack.angle + (i / attack.rays) * Math.PI * 2;
+                            const ex = attack.x + Math.cos(a) * 200;
+                            const ey = attack.y + Math.sin(a) * 200;
+                            const bdist = distanceToLine(player.x, player.y, attack.x, attack.y, ex, ey);
+                            if (bdist < 5 && invincibleTime <= 0 && !isDashing) {
+                                invincibleTime = 2000;
+                            }
+                        }
+                        break;
+                    case 'grid':
+                        attack.startY += attack.speed;
+                        if (attack.startY > canvas.height) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        for (let gx = attack.startX; gx < canvas.width; gx += attack.spacing) {
+                            const gdist = distanceToLine(player.x, player.y, gx, 0, gx, canvas.height);
+                            if (gdist < 5 && invincibleTime <= 0 && !isDashing) {
+                                invincibleTime = 2000;
+                            }
+                        }
+                        break;
+                    case 'comet':
+                        attack.tail.push({x: attack.x, y: attack.y});
+                        if (attack.tail.length > 20) attack.tail.shift();
+                        attack.x += attack.vx;
+                        attack.y += attack.vy;
+                        if (attack.x < 0 || attack.x > canvas.width || attack.y < 0 || attack.y > canvas.height) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        // Check tail
+                        attack.tail.forEach(p => {
+                            const tdist = Math.hypot(player.x - p.x, player.y - p.y);
+                            if (tdist < 8 && invincibleTime <= 0 && !isDashing) {
+                                invincibleTime = 2000;
+                            }
+                        });
+                        // Head
+                        const hdist = Math.hypot(player.x - attack.x, player.y - attack.y);
+                        if (hdist < player.size / 2 && invincibleTime <= 0 && !isDashing) {
+                            invincibleTime = 2000;
+                        }
+                        break;
+                    case 'vortex':
+                        attack.radius += attack.speed;
+                        attack.angle += 0.2;
+                        if (attack.radius > 200) {
+                            attacks.splice(index, 1);
+                            return;
+                        }
+                        const points = 12;
+                        for (let i = 0; i < points; i++) {
+                            const a = attack.angle + (i / points) * Math.PI * 2;
+                            const r = attack.radius * (0.5 + 0.5 * Math.sin(a * 3));
+                            const ex = attack.x + Math.cos(a) * r;
+                            const ey = attack.y + Math.sin(a) * r;
+                            const vdist = Math.hypot(player.x - ex, player.y - ey);
+                            if (vdist < 6 && invincibleTime <= 0 && !isDashing) {
+                                invincibleTime = 2000;
+                            }
+                        }
+                        break;
                 }
             });
         }
@@ -474,8 +451,6 @@
         function drawPlayer() {
             const skin = skins.find(s => s.name === selectedSkin);
             ctx.fillStyle = skin.color;
-            ctx.shadowColor = skin.color;
-            ctx.shadowBlur = 15 + Math.sin(Date.now() / 150) * 10; // Beat pulse glow
             if (skin.shape === 'square') {
                 ctx.fillRect(player.x - player.size/2, player.y - player.size/2, player.size, player.size);
             } else if (skin.shape === 'circle') {
@@ -483,12 +458,10 @@
                 ctx.arc(player.x, player.y, player.size/2, 0, Math.PI * 2);
                 ctx.fill();
             } else if (skin.shape === 'star') {
-                drawStar(player.x, player.y, player.size/2 * 1.5, 5);
+                drawStar(player.x, player.y, player.size/2, 5);
             }
-            ctx.shadowBlur = 0;
-            // Dash trail effect
-            if (isDashing) {
-                ctx.fillStyle = 'rgba(255,215,0,0.5)';
+            if (invincibleTime > 0) {
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
                 ctx.beginPath();
                 ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
                 ctx.fill();
@@ -496,43 +469,111 @@
         }
 
         function drawStar(cx, cy, radius, spikes) {
+            ctx.beginPath();
             const rot = Math.PI / 2 * 3;
             const step = Math.PI / spikes;
-            ctx.beginPath();
             ctx.moveTo(cx, cy - radius);
             for (let i = 0; i < spikes; i++) {
                 const x = cx + Math.cos(rot + i * step) * radius;
                 const y = cy + Math.sin(rot + i * step) * radius;
                 ctx.lineTo(x, y);
-                const innerRadius = radius / 2;
-                const x2 = cx + Math.cos(rot + i * step + step / 2) * innerRadius;
-                const y2 = cy + Math.sin(rot + i * step + step / 2) * innerRadius;
+                const x2 = cx + Math.cos(rot + i * step + step / 2) * (radius / 2);
+                const y2 = cy + Math.sin(rot + i * step + step / 2) * (radius / 2);
                 ctx.lineTo(x2, y2);
             }
             ctx.closePath();
             ctx.fill();
         }
 
-        function draw() {
-            ctx.clearRect(0, 0, 800, 600);
+        function drawUI() {
+            ctx.fillStyle = '#fff';
+            ctx.font = '16px monospace';
+            ctx.fillText(`Score: ${score} | Lives: ${lives} | Creds: ${creds}`, 10, 20);
+            ctx.fillText(`Dash: ${dashCooldown > 0 ? Math.ceil(dashCooldown/1000) + 's' : 'Ready'}`, 10, 40);
+            if (invincibleTime > 0) {
+                ctx.fillText(`Invincible: ${Math.ceil(invincibleTime/1000)}s`, 10, 60);
+            }
 
-            // Background pulse
-            const gradient = ctx.createRadialGradient(400, 300, 0, 400, 300, 400);
-            gradient.addColorStop(0, `rgba(0,255,136,${Math.sin(Date.now()/500)*0.3 + 0.1})`);
-            gradient.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, 800, 600);
+            if (gameState === 'menu') {
+                ctx.fillStyle = '#fff';
+                ctx.font = '48px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('Rhythm Dodge', canvas.width/2, canvas.height/2 - 50);
+                ctx.font = '24px monospace';
+                ctx.fillText('WASD/Arrows: Move | Space: Dash', canvas.width/2, canvas.height/2 + 20);
+                // Shop button
+                ctx.fillText('Shop', canvas.width/2, canvas.height/2 + 100);
+                if (mouseX > canvas.width/2 - 50 && mouseX < canvas.width/2 + 50 && mouseY > canvas.height/2 + 70 && mouseY < canvas.height/2 + 100) {
+                    ctx.fillStyle = '#ccc';
+                    ctx.fillRect(canvas.width/2 - 50, canvas.height/2 + 70, 100, 30);
+                    ctx.fillStyle = '#000';
+                    ctx.fillText('Shop', canvas.width/2, canvas.height/2 + 95);
+                    ctx.fillStyle = '#fff';
+                }
+                // Play button
+                ctx.fillText('Play', canvas.width/2, canvas.height/2 + 150);
+                if (mouseX > canvas.width/2 - 50 && mouseX < canvas.width/2 + 50 && mouseY > canvas.height/2 + 120 && mouseY < canvas.height/2 + 150) {
+                    ctx.fillStyle = '#ccc';
+                    ctx.fillRect(canvas.width/2 - 50, canvas.height/2 + 120, 100, 30);
+                    ctx.fillStyle = '#000';
+                    ctx.fillText('Play', canvas.width/2, canvas.height/2 + 145);
+                    ctx.fillStyle = '#fff';
+                }
+                ctx.textAlign = 'left';
+            } else if (gameState === 'shop') {
+                ctx.fillStyle = '#fff';
+                ctx.font = '32px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('Shop', canvas.width/2, 100);
+                ctx.font = '18px monospace';
+                ctx.textAlign = 'left';
+                skins.forEach((skin, i) => {
+                    const y = 150 + i * 40;
+                    ctx.fillText(`${skin.name} (${skin.shape}) ${ownedSkins.includes(skin.name) ? '' : skin.price}c`, 50, y);
+                    // Button
+                    const btnX = canvas.width - 150;
+                    const btnY = y - 20;
+                    const text = ownedSkins.includes(skin.name) ? 'Equip' : 'Buy';
+                    ctx.fillText(text, btnX, btnY + 15);
+                    if (mouseX > btnX - 10 && mouseX < btnX + 50 && mouseY > btnY && mouseY < btnY + 25) {
+                        ctx.fillStyle = '#ccc';
+                        ctx.fillRect(btnX - 10, btnY, 60, 25);
+                        ctx.fillStyle = '#000';
+                        ctx.fillText(text, btnX, btnY + 15);
+                        ctx.fillStyle = '#fff';
+                    }
+                });
+                // Back
+                ctx.textAlign = 'center';
+                ctx.fillText('Back', canvas.width/2, canvas.height - 40);
+                if (mouseX > canvas.width/2 - 50 && mouseX < canvas.width/2 + 50 && mouseY > canvas.height - 60 && mouseY < canvas.height - 30) {
+                    ctx.fillStyle = '#ccc';
+                    ctx.fillRect(canvas.width/2 - 50, canvas.height - 60, 100, 30);
+                    ctx.fillStyle = '#000';
+                    ctx.fillText('Back', canvas.width/2, canvas.height - 45);
+                    ctx.fillStyle = '#fff';
+                }
+                ctx.textAlign = 'left';
+            } else if (gameState === 'gameOver') {
+                ctx.fillStyle = '#fff';
+                ctx.font = '48px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', canvas.width/2, canvas.height/2);
+                ctx.font = '24px monospace';
+                ctx.fillText(`Score: ${score}`, canvas.width/2, canvas.height/2 + 50);
+                ctx.fillText(`Creds Earned: ${Math.floor(score / 10) + (score >= 100 ? 50 : 0)}`, canvas.width/2, canvas.height/2 + 80);
+                ctx.fillText('Click to Restart', canvas.width/2, canvas.height/2 + 120);
+                ctx.textAlign = 'left';
+            }
+        }
 
-            if (gameState === 'playing') {
-                drawPlayer();
-
-                attacks.forEach(attack => {
-                    ctx.strokeStyle = attack.color;
-                    ctx.lineWidth = 6;
-                    ctx.lineCap = 'round';
-                    ctx.shadowColor = attack.color;
-                    ctx.shadowBlur = 10;
-                    if (attack.type === 'line') {
+        function drawAttacks() {
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            attacks.forEach(attack => {
+                switch (attack.type) {
+                    case 'line':
                         const currX1 = attack.x1 + (attack.x2 - attack.x1) * attack.progress;
                         const currY1 = attack.y1 + (attack.y2 - attack.y1) * attack.progress;
                         const currX2 = attack.x1 + (attack.x2 - attack.x1) * (attack.progress - 0.05);
@@ -541,36 +582,96 @@
                         ctx.moveTo(currX1, currY1);
                         ctx.lineTo(currX2, currY2);
                         ctx.stroke();
-                    } else {
+                        break;
+                    case 'circle':
                         ctx.beginPath();
                         ctx.arc(attack.x, attack.y, attack.radius, 0, Math.PI * 2);
                         ctx.stroke();
-                        if (attack.type === 'pulse') {
+                        break;
+                    case 'pulse':
+                        ctx.beginPath();
+                        ctx.arc(attack.x, attack.y, attack.radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(attack.x, attack.y, attack.radius * 0.6, 0, Math.PI * 2);
+                        ctx.stroke();
+                        break;
+                    case 'spiral':
+                        for (let i = 0; i < attack.arms; i++) {
+                            const a = attack.angle + (i / attack.arms) * Math.PI * 2;
                             ctx.beginPath();
-                            ctx.arc(attack.x, attack.y, attack.radius * 0.6, 0, Math.PI * 2);
-                            ctx.lineWidth = 3;
+                            ctx.arc(attack.x, attack.y, attack.radius, a, a + Math.PI * 2 / attack.arms);
                             ctx.stroke();
                         }
-                    }
-                    ctx.shadowBlur = 0;
-                    ctx.lineWidth = 6;
-                });
+                        break;
+                    case 'wave':
+                        const wx = attack.progress * canvas.width;
+                        ctx.beginPath();
+                        ctx.moveTo(0, attack.y);
+                        for (let i = 0; i < canvas.width; i += 10) {
+                            const waveY = attack.y + Math.sin((i + wx) / 50) * attack.amplitude;
+                            ctx.lineTo(i, waveY);
+                        }
+                        ctx.stroke();
+                        break;
+                    case 'burst':
+                        for (let i = 0; i < attack.rays; i++) {
+                            const a = attack.angle + (i / attack.rays) * Math.PI * 2;
+                            const ex = attack.x + Math.cos(a) * 200;
+                            const ey = attack.y + Math.sin(a) * 200;
+                            ctx.beginPath();
+                            ctx.moveTo(attack.x, attack.y);
+                            ctx.lineTo(ex, ey);
+                            ctx.stroke();
+                        }
+                        break;
+                    case 'grid':
+                        for (let gx = attack.startX; gx < canvas.width; gx += attack.spacing) {
+                            ctx.beginPath();
+                            ctx.moveTo(gx, 0);
+                            ctx.lineTo(gx, canvas.height);
+                            ctx.stroke();
+                        }
+                        break;
+                    case 'comet':
+                        ctx.beginPath();
+                        attack.tail.forEach((p, i) => {
+                            ctx.globalAlpha = i / attack.tail.length;
+                            ctx.lineTo(p.x, p.y);
+                        });
+                        ctx.lineTo(attack.x, attack.y);
+                        ctx.stroke();
+                        ctx.globalAlpha = 1;
+                        break;
+                    case 'vortex':
+                        const points = 12;
+                        ctx.beginPath();
+                        for (let i = 0; i < points; i++) {
+                            const a = attack.angle + (i / points) * Math.PI * 2;
+                            const r = attack.radius * (0.5 + 0.5 * Math.sin(a * 3));
+                            const ex = attack.x + Math.cos(a) * r;
+                            const ey = attack.y + Math.sin(a) * r;
+                            if (i === 0) ctx.moveTo(ex, ey);
+                            else ctx.lineTo(ex, ey);
+                        }
+                        ctx.closePath();
+                        ctx.stroke();
+                        break;
+                }
+            });
+        }
 
-                ctx.fillStyle = '#00ff88';
-                ctx.font = 'bold 18px Orbitron';
-                ctx.shadowBlur = 0;
-                ctx.fillText(`Skin: ${selectedSkin.split(' ')[0]}`, 10, 550);
-            } else if (gameState === 'gameOver') {
-                ctx.fillStyle = 'rgba(0,255,136,0.9)';
-                ctx.font = 'bold 50px Orbitron';
-                ctx.textAlign = 'center';
-                ctx.fillText('Beat Broken!', 400, 280);
-                ctx.font = 'bold 24px Orbitron';
-                ctx.fillStyle = '#fff';
-                ctx.fillText(`Final Score: ${score}`, 400, 320);
-                ctx.fillText(`Creds Earned: ${Math.floor(score / 10) + (score >= 100 ? 50 : 0)}`, 400, 350);
-                ctx.fillText('Click/Space to Restart', 400, 400);
-                ctx.textAlign = 'left';
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === 'playing') {
+                drawAttacks();
+                drawPlayer();
+                drawUI();
+            } else {
+                drawUI();
             }
         }
 
@@ -586,37 +687,20 @@
 
         function gameOver() {
             gameState = 'gameOver';
-            if (audioContext) {
-                cancelAnimationFrame(rafId);
-            }
+            if (audioContext) cancelAnimationFrame(rafId);
             earnCreds();
-            hud.style.display = 'none';
-            dashIndicator.style.display = 'none';
         }
-
-        // Restart
-        canvas.addEventListener('click', () => {
-            if (gameState === 'gameOver') startGame();
-        });
-
-        // BPM fallback update
-        bpmInput.addEventListener('input', () => {
-            bpm = parseInt(bpmInput.value);
-            spawnInterval = 60000 / bpm;
-        });
 
         function distanceToLine(px, py, x1, y1, x2, y2) {
             const A = px - x1; const B = py - y1; const C = x2 - x1; const D = y2 - y1;
             const dot = A * C + B * D; const lenSq = C * C + D * D;
             if (lenSq === 0) return Math.hypot(A, B);
-            const param = dot / lenSq;
-            let xx = x1 + (param < 0 ? 0 : param > 1 ? C : param * C);
-            let yy = y1 + (param < 0 ? 0 : param > 1 ? D : param * D);
+            const param = dot / lenSq; const xx = x1 + Math.max(0, Math.min(1, param)) * C;
+            const yy = y1 + Math.max(0, Math.min(1, param)) * D;
             return Math.hypot(px - xx, py - yy);
         }
 
         // Init
-        renderSkinList();
         draw();
     </script>
 </body>
