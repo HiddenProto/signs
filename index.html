@@ -2,973 +2,1038 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alternate's Magical Evolution</title>
     <style>
-        body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif; color: white; }
-        canvas { border: 1px solid white; background: black; }
+        body {
+            margin: 0;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 1px solid white;
+            background: black;
+        }
     </style>
 </head>
 <body>
-    <canvas id="canvas" width="800" height="600"></canvas>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
     <script>
-        const canvas = document.getElementById('canvas');
+        const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const GAME_WIDTH = 800;
-        const GAME_HEIGHT = 600;
+        const CW = 800;
+        const CH = 600;
+        const CX = 400;
+        const CY = 300;
 
-        class Vector {
-            constructor(x, y) {
-                this.x = x;
-                this.y = y;
-            }
-            add(v) { return new Vector(this.x + v.x, this.y + v.y); }
-            sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
-            mul(s) { return new Vector(this.x * s, this.y * s); }
-            dot(v) { return this.x * v.x + this.y * v.y; }
-            mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
-            norm() {
-                const m = this.mag();
-                return m > 0 ? this.mul(1 / m) : new Vector(0, 0);
-            }
-        }
+        let gameState = 'menu';
+        let player;
+        let enemies = [];
+        let projectiles = [];
+        let particles = [];
+        let beams = []; // for lasting beams
+        let wave = 1;
+        let kills = 0;
+        let gameTime = 0;
+        let shake = 0;
+        let upgrades = []; // for level up
 
-        class Entity {
-            constructor(x, y, color, size = 10) {
-                this.pos = new Vector(x, y);
-                this.vel = new Vector(0, 0);
-                this.color = color;
-                this.size = size;
-                this.health = 100;
-                this.maxHealth = 100;
-                this.speed = 3;
-                this.atk = 20;
-                this.def = 10;
-                this.pl = 1;
-                this.debuffs = [];
-                this.slowMult = 1;
-                this.owner = null; // for projs
-            }
-            update(dt) {
-                this.pos = this.pos.add(this.vel.mul(dt));
-                // Clamp bounds
-                this.pos.x = Math.max(0, Math.min(GAME_WIDTH, this.pos.x));
-                this.pos.y = Math.max(0, Math.min(GAME_HEIGHT, this.pos.y));
-                // Debuffs
-                this.debuffs = this.debuffs.filter(d => {
-                    d.duration -= dt;
-                    if (d.type === 'dot') this.health -= d.dotValue * dt;
-                    if (d.type === 'slow') this.slowMult = d.value;
-                    return d.duration > 0;
-                });
-                this.slowMult = this.debuffs.some(d => d.type === 'slow') ? this.debuffs.find(d => d.type === 'slow').value : 1;
-                if (this.debuffs.some(d => d.type === 'stun')) this.vel = new Vector(0, 0);
-            }
-            takeDamage(dmg, type, attackerPl) {
-                let effectiveDmg = Math.max(1, dmg - this.def * (1 - 0.01 * attackerPl));
-                if (type === 'shieldAttack') effectiveDmg = dmg; // ignore def
-                this.health -= effectiveDmg;
-                return effectiveDmg;
-            }
-            applyDebuff(type, duration, value) {
-                this.debuffs.push({ type, duration, value: value || 1, dotValue: value || 0 });
-            }
-            render(ctx, animOffset = 0) {
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.pos.x, this.pos.y - this.size / 2, this.size / 2, 0, Math.PI * 2);
-                ctx.fill(); // head
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(this.pos.x, this.pos.y);
-                ctx.lineTo(this.pos.x, this.pos.y + this.size * 1.2);
-                ctx.stroke(); // body
-                // Simple arms
-                const armAngle = Math.sin(animOffset) * 0.3;
-                ctx.beginPath();
-                ctx.moveTo(this.pos.x, this.pos.y);
-                ctx.lineTo(this.pos.x + Math.cos(armAngle) * this.size * 0.8, this.pos.y + Math.sin(armAngle) * this.size * 0.8);
-                ctx.stroke();
-                // Legs
-                const legAngle = Math.sin(animOffset * 1.5) * 0.2;
-                ctx.beginPath();
-                ctx.moveTo(this.pos.x, this.pos.y + this.size * 1.2);
-                ctx.lineTo(this.pos.x - legAngle * this.size * 0.5, this.pos.y + this.size * 1.7);
-                ctx.moveTo(this.pos.x, this.pos.y + this.size * 1.2);
-                ctx.lineTo(this.pos.x + legAngle * this.size * 0.5, this.pos.y + this.size * 1.7);
-                ctx.stroke();
-                if (this.pl > 8) {
-                    ctx.shadowColor = 'gold';
-                    ctx.shadowBlur = 5;
-                    ctx.beginPath();
-                    ctx.arc(this.pos.x, this.pos.y - this.size / 2, this.size / 2, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.shadowBlur = 0;
-                }
-                // Health bar
-                ctx.fillStyle = 'red';
-                ctx.fillRect(this.pos.x - this.size, this.pos.y - this.size - 5, this.size * 2, 3);
-                ctx.fillStyle = 'green';
-                ctx.fillRect(this.pos.x - this.size, this.pos.y - this.size - 5, this.size * 2 * (this.health / this.maxHealth), 3);
-            }
-        }
+        let keys = {};
+        let mouse = { x: CX, y: CY, down: false };
 
-        class Player extends Entity {
+        // Attack definitions
+        const ATTACKS = {
+            1: { name: 'Magic Shot', unlocked: true, cd: 200, lastUse: 0, mana: 5, damage: 20, type: 'projectile', color: 'orange', size: 5, speed: 5, homing: 0.01, bounces: 0 },
+            2: { name: 'Tri-Shot', unlocked: false, cd: 300, lastUse: 0, mana: 10, damage: 15, type: 'spread', count: 3, angle: 0.3, color: 'blue', size: 4, speed: 4 },
+            3: { name: 'Beam Shot', unlocked: false, cd: 500, lastUse: 0, mana: 15, damage: 30, type: 'beam', color: 'white', thickness: 2, speed: 10, pierce: true, stun: 1000 },
+            4: { name: 'Ice Shard', unlocked: false, cd: 400, lastUse: 0, mana: 12, damage: 18, type: 'projectile', color: 'cyan', size: 6, speed: 4, effect: 'slow', effectDur: 2000, effectVal: 0.5 },
+            5: { name: 'Lightning', unlocked: false, cd: 800, lastUse: 0, mana: 20, damage: 25, type: 'lightning', color: 'yellow', size: 3, speed: 8, chains: 0, chainRange: 80, dot: false, dotDur: 0 },
+            6: { name: 'Curve Shot', unlocked: false, cd: 350, lastUse: 0, mana: 8, damage: 22, type: 'projectile', color: 'green', size: 5, speed: 4, homing: 0.05 },
+            7: { name: 'Shield Breaker', unlocked: false, cd: 600, lastUse: 0, mana: 18, damage: 10, type: 'aoe', radius: 50, color: 'purple', break: 50, pierce: false },
+            8: { name: 'Homing Missile', unlocked: false, cd: 700, lastUse: 0, mana: 25, damage: 40, type: 'projectile', color: 'red', size: 8, speed: 3, homing: 0.1, explode: false, explodeRad: 40 },
+            9: { name: 'Force Wave', unlocked: false, cd: 500, lastUse: 0, mana: 15, damage: 20, type: 'cone', count: 7, angle: 0.5, color: 'blue', size: 3, speed: 6, knockback: 50 },
+            10: { name: 'Penta Shot', unlocked: false, cd: 150, lastUse: 0, mana: 12, damage: 12, type: 'spread', count: 5, angle: 0.4, color: 'lightblue', size: 3, speed: 5 },
+            11: { name: 'Recursive Shot', unlocked: false, cd: 900, lastUse: 0, mana: 30, damage: 35, type: 'projectile', color: 'magenta', size: 6, speed: 5, bounces: 3, homing: 0 },
+            12: { name: 'Shield Attack', unlocked: false, cd: 400, lastUse: 0, mana: 20, damage: 25, type: 'projectile', color: 'gold', size: 10, speed: 4, ignoreShield: true, reflect: true },
+            13: { name: 'Beta Laser', unlocked: false, cd: 1200, lastUse: 0, mana: 50, damage: 60, type: 'beam', color: 'red', thickness: 6, speed: 0, duration: 3000, dot: true, dotDur: 3000, dotDmg: 10 },
+            14: { name: 'Super Speed', unlocked: false, cd: 10000, lastUse: 0, mana: 40, damage: 0, type: 'buff', duration: 5000, speedMult: 2, invuln: false }
+        };
+
+        class Player {
             constructor() {
-                super(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'blue');
-                this.maxHealth = 100;
+                this.reset();
+                this.attacks = { ...ATTACKS };
+                for (let id in this.attacks) {
+                    if (!this.attacks[id].unlocked) this.attacks[id].unlocked = this.unlocks.has(id);
+                }
+            }
+            reset() {
+                this.x = CX;
+                this.y = CY;
                 this.health = 100;
-                this.maxMana = 100;
+                this.maxHealth = 100;
                 this.mana = 100;
+                this.maxMana = 100;
+                this.manaRegen = 0.33; // ~20/sec at 60fps
+                this.speed = 3;
                 this.pl = 1;
                 this.atk = 20;
                 this.def = 10;
                 this.level = 1;
                 this.xp = 0;
-                this.xpToNext = 100;
-                this.unlockedAbilities = [new Ability('Magic Shot', 0.5, 5, 20, 'projectile', 'orange', this.pl, 0)];
-                this.unlocks = [0];
-                this.selectedAbility = 0;
-                this.shieldActive = false;
-                this.shieldStrength = 0;
+                this.nextLevelXp = 100;
+                this.unlocks = new Set(['1']);
+                this.selectedAttack = 1;
+                this.shielding = false;
+                this.shieldStrength = 100;
                 this.shieldMax = 100;
                 this.shieldYield = 1.0;
-                this.speedBuff = 1;
-                this.speedBuffTimer = 0;
-                this.invulnTimer = 0;
-                this.animOffset = 0;
-                this.trailTimer = 0;
+                this.shieldRadius = 40;
+                this.omniShield = false;
+                this.speedBuffEnd = 0;
+                this.invulnEnd = 0;
             }
             update(dt) {
-                super.update(dt);
-                this.mana = Math.min(this.maxMana, this.mana + 20 * dt);
-                this.animOffset += dt * 2;
-                if (this.vel.mag() > 0.1) {
-                    this.trailTimer += dt;
-                    if (this.trailTimer > 0.1) {
-                        particles.push(new Particle(this.pos.sub(this.vel.norm().mul(5)), this.vel.mul(-1).norm().mul(50), 'blue', 0.5));
-                        this.trailTimer = 0;
-                    }
-                }
-                if (this.shieldActive) {
-                    this.shieldStrength = Math.min(this.shieldMax, this.shieldStrength + 50 * dt);
+                this.mana = Math.min(this.maxMana, this.mana + this.manaRegen * dt);
+                if (this.invulnEnd > Date.now()) {} else this.invulnEnd = 0;
+                if (this.speedBuffEnd > Date.now()) {
+                    this.speed = 3 * 2;
                 } else {
-                    this.shieldStrength = Math.max(0, this.shieldStrength - 50 * dt);
+                    this.speed = 3;
                 }
-                if (this.speedBuffTimer > 0) {
-                    this.speedBuffTimer -= dt;
-                    if (this.pl >= 12) this.invulnTimer = Math.max(this.invulnTimer - dt, 0);
-                    if (this.speedBuffTimer <= 0) this.speedBuff = 1;
+                if (!this.shielding) {
+                    this.shieldStrength = Math.min(this.shieldMax, this.shieldStrength + 0.5 * dt);
                 }
-                this.speed = (3 * this.speedBuff * this.slowMult) * (1 + this.pl / 32);
-                this.vel = this.vel.mul(this.slowMult);
-                this.unlockedAbilities.forEach(a => { if (a.cd > 0) a.cd = Math.max(0, a.cd - dt); });
-                // Input move
-                let inputVel = new Vector(0, 0);
-                if (keys['w'] || keys['ArrowUp']) inputVel.y -= 1;
-                if (keys['s'] || keys['ArrowDown']) inputVel.y += 1;
-                if (keys['a'] || keys['ArrowLeft']) inputVel.x -= 1;
-                if (keys['d'] || keys['ArrowRight']) inputVel.x += 1;
-                if (inputVel.mag() > 0) this.vel = inputVel.norm().mul(this.speed);
-                if (this.invulnTimer > 0) this.invulnTimer -= dt;
+                let speed = this.speed * (this.speedBuffEnd > Date.now() ? 2 : 1);
+                if (keys['w'] || keys['ArrowUp']) this.y = Math.max(0, this.y - speed);
+                if (keys['s'] || keys['ArrowDown']) this.y = Math.min(CH, this.y + speed);
+                if (keys['a'] || keys['ArrowLeft']) this.x = Math.max(0, this.x - speed);
+                if (keys['d'] || keys['ArrowRight']) this.x = Math.min(CW, this.x + speed);
+                if (this.pl === 16 && shake > 0) shake--;
             }
-            takeDamage(dmg, type, attackerPl) {
-                if (this.invulnTimer > 0) return 0;
-                let absorbed = 0;
-                if (this.shieldActive && this.shieldStrength > 0) {
-                    absorbed = Math.min(dmg, this.shieldStrength);
-                    this.shieldStrength -= absorbed;
-                    this.mana -= absorbed * this.shieldYield;
-                    for (let i = 0; i < 5; i++) particles.push(new Particle(this.pos, new Vector(Math.random() * 100 - 50, Math.random() * 100 - 50), 'yellow', 0.3));
+            draw(ctx, t) {
+                let ox = 0, oy = 0;
+                if (this.pl === 16 && shake > 0) {
+                    ox = (Math.random() - 0.5) * 5;
+                    oy = (Math.random() - 0.5) * 5;
                 }
-                let effectiveDmg = Math.max(1, (dmg - absorbed) - this.def * (1 - 0.01 * attackerPl));
-                this.health -= effectiveDmg;
-                if (this.health <= 0) gameState = 'gameOver';
-                return effectiveDmg;
-            }
-            fire(targetPos) {
-                const abil = this.unlockedAbilities[this.selectedAbility];
-                if (abil.cd <= 0 && this.mana >= abil.manaCost) {
-                    abil.fire(this.pos, targetPos, this);
-                    this.mana -= abil.manaCost;
-                    abil.cd = abil.maxCd;
-                    console.log(`${abil.name} fired`);
-                    if (this.pl >= 16) screenShake = 0.1;
-                }
-            }
-            cycleAbility() {
-                this.selectedAbility = (this.selectedAbility + 1) % this.unlockedAbilities.length;
-            }
-            selectAbility(key) {
-                const keyMap = {
-                    'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4,
-                    'Digit6': 5, 'Digit7': 6, 'Digit8': 7, 'Digit9': 8,
-                    'KeyC': 9, 'KeyV': 10, 'KeyB': 11, 'KeyN': 12, 'KeyM': 13
-                };
-                const idx = keyMap[key];
-                if (idx !== undefined && this.unlocks.includes(idx)) {
-                    this.selectedAbility = this.unlockedAbilities.findIndex(a => a.id === idx);
-                }
-            }
-            render(ctx) {
-                super.render(ctx, this.animOffset);
-                // Hat
-                ctx.fillStyle = 'purple';
-                ctx.fillRect(this.pos.x - 4, this.pos.y - this.size / 2 - 6, 8, 4);
-                // Shield
-                if (this.shieldActive && this.shieldStrength > 0) {
-                    const radius = 40 + (this.pl >= 8 ? 20 : 0); // omni upgrade sim
-                    ctx.strokeStyle = 'lime';
-                    ctx.lineWidth = 3 + Math.sin(Date.now() * 0.01) * 2;
-                    ctx.beginPath();
-                    ctx.arc(this.pos.x, this.pos.y, radius, 0, Math.PI * 2);
-                    ctx.stroke();
-                }
-                // Aim line
-                ctx.strokeStyle = 'gray';
-                ctx.lineWidth = 1;
+                ctx.save();
+                ctx.translate(ox, oy);
+                ctx.strokeStyle = 'blue';
+                ctx.lineWidth = 2;
+                // head
                 ctx.beginPath();
-                ctx.moveTo(this.pos.x, this.pos.y);
-                ctx.lineTo(mouse.x, mouse.y);
+                ctx.arc(this.x, this.y - 40, 8, 0, Math.PI * 2);
                 ctx.stroke();
-            }
-            save() {
-                const save = {
-                    pl: this.pl, level: this.level, xp: this.xp, atk: this.atk, def: this.def,
-                    shieldYield: this.shieldYield,
-                    unlockedAbilities: this.unlockedAbilities.map(a => ({
-                        id: a.id, name: a.name, dmg: a.dmg, maxCd: a.maxCd, manaCost: a.manaCost,
-                        type: a.type, color: a.color
-                    }))
-                };
-                localStorage.setItem('alternateSave', JSON.stringify(save));
-            }
-            load() {
-                const saved = localStorage.getItem('alternateSave');
-                if (saved) {
-                    const data = JSON.parse(saved);
-                    this.pl = data.pl; this.level = data.level; this.xp = data.xp;
-                    this.atk = data.atk; this.def = data.def;
-                    this.shieldYield = data.shieldYield;
-                    this.unlockedAbilities = data.unlockedAbilities.map(aData => new Ability(
-                        aData.name, aData.maxCd, aData.manaCost, aData.dmg,
-                        aData.type, aData.color, this.pl, aData.id
-                    ));
-                    this.unlocks = this.unlockedAbilities.map(a => a.id);
-                }
-            }
-        }
-
-        class Enemy extends Entity {
-            constructor(x, y, color, level, type) {
-                super(x, y, color);
-                this.level = level;
-                this.type = type;
-                this.pl = Math.floor(level / 2);
-                this.health = 50 + level * 20;
-                this.maxHealth = this.health;
-                this.speed = 1 + level * 0.2;
-                this.atk = 10 + level * 5;
-                this.def = 5 + level * 2;
-                this.spellTimer = 0;
-                this.dodgeTimer = 0;
-                this.shieldActive = this.pl >= 4 && Math.random() < 0.3;
-                this.shieldStrength = this.pl >= 4 ? 50 : 0;
-                this.unlockedAbilities = ABILITIES.slice(0, Math.min(this.pl, ABILITIES.length)).map((a, i) => new Ability(a.name, a.maxCd, a.manaCost, a.baseDmg, a.type, a.color, this.pl, i));
-                this.animOffset = Math.random() * Math.PI * 2;
-                this.isBoss = false;
-                this.size = type === 'boss' ? 15 : 10;
-            }
-            update(dt) {
-                super.update(dt);
-                this.animOffset += dt * 1.5;
-                if (this.shieldActive) this.shieldStrength = Math.min(50 + this.pl * 10, this.shieldStrength + 30 * dt);
-                this.spellTimer += dt;
-                let dist = this.pos.sub(player.pos).mag();
-                let dir = player.pos.sub(this.pos).norm();
-                if (dist > 30) {
-                    this.vel = dir.mul(this.speed);
-                } else {
-                    this.vel = new Vector(0, 0);
-                    if (dist < 15) player.takeDamage(this.atk, 'melee', this.pl);
-                }
-                // AI cast
-                let castInt = Math.max(3 - this.pl * 0.1, 1);
-                if (this.spellTimer > castInt && this.unlockedAbilities.length > 0 && !this.debuffs.some(d => d.type === 'stun')) {
-                    this.spellTimer = 0;
-                    const abil = this.unlockedAbilities[Math.floor(Math.random() * this.unlockedAbilities.length)];
-                    abil.fire(this.pos, player.pos, this);
-                    console.log(`${this.type} casts ${abil.name}`);
-                }
-                // Dodge
-                if (this.dodgeTimer <= 0 && Math.random() < 0.02 * this.pl) {
-                    let perp = new Vector(-dir.y, dir.x).mul((Math.random() > 0.5 ? 1 : -1));
-                    this.vel = perp.mul(this.speed * 1.5);
-                    this.dodgeTimer = 0.5;
-                } else {
-                    this.dodgeTimer -= dt;
-                }
-                // Flee at PL16
-                if (player.pl >= 16 && dist > 50 && Math.random() < 0.1) {
-                    this.vel = dir.mul(-this.speed * 1.5);
-                }
-                if (this.isBoss) {
-                    this.shieldActive = true;
-                }
-            }
-            takeDamage(dmg, type, attackerPl) {
-                let absorbed = 0;
-                if (this.shieldActive && this.shieldStrength > 0 && type !== 'shieldAttack') {
-                    absorbed = Math.min(dmg, this.shieldStrength);
-                    this.shieldStrength -= absorbed;
-                    for (let i = 0; i < 5; i++) particles.push(new Particle(this.pos, new Vector(Math.random() * 100 - 50, Math.random() * 100 - 50), 'yellow', 0.3));
-                }
-                let effectiveDmg = Math.max(1, (dmg - absorbed) - this.def * (1 - 0.01 * attackerPl));
-                if (type === 'shieldAttack') effectiveDmg = dmg - absorbed;
-                this.health -= effectiveDmg;
-                if (this.health <= 0) {
-                    player.xp += 10 + player.level * 5;
-                    addParticles(this.pos, 'spark', 20);
-                    enemies = enemies.filter(e => e !== this);
-                    if (enemies.length === 0) {
-                        player.xp += currentWave * 50; // wave bonus
-                        currentWave++;
-                        if (player.xp >= player.xpToNext) {
-                            player.level++;
-                            player.xp -= player.xpToNext;
-                            player.xpToNext = Math.floor(player.xpToNext * 1.5);
-                            gameState = 'levelUp';
-                            upgradePool = getUpgradePool(player);
-                        }
-                        spawnWave();
-                    }
-                }
-                return effectiveDmg;
-            }
-            render(ctx) {
-                if (this.isBoss) {
-                    ctx.save();
-                    ctx.translate(this.pos.x, this.pos.y);
-                    ctx.scale(1.5, 1.5);
-                    super.render(ctx, this.animOffset);
-                    ctx.restore();
-                } else {
-                    super.render(ctx, this.animOffset);
-                }
-                if (this.shieldActive && this.shieldStrength > 0) {
-                    ctx.strokeStyle = 'cyan';
+                // hat
+                ctx.fillStyle = 'purple';
+                ctx.beginPath();
+                ctx.moveTo(this.x - 10, this.y - 48);
+                ctx.lineTo(this.x + 10, this.y - 48);
+                ctx.lineTo(this.x, this.y - 60);
+                ctx.closePath();
+                ctx.fill();
+                // body
+                ctx.strokeStyle = 'blue';
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 32);
+                ctx.lineTo(this.x, this.y + 20);
+                ctx.stroke();
+                // arms sway
+                let armSway = Math.sin(t * 0.01) * 10;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 20);
+                ctx.lineTo(this.x - 15 + armSway, this.y);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 20);
+                ctx.lineTo(this.x + 15 - armSway, this.y);
+                ctx.stroke();
+                // legs
+                let legSway = Math.sin(t * 0.01 + Math.PI) * 8;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 20);
+                ctx.lineTo(this.x - 8 + legSway, this.y + 40);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 20);
+                ctx.lineTo(this.x + 8 - legSway, this.y + 40);
+                ctx.stroke();
+                // shield
+                if (this.shielding && this.shieldStrength > 0) {
+                    let rad = this.shieldRadius + (this.omniShield ? 20 : 0);
+                    ctx.strokeStyle = `rgba(0,255,0,0.5)`;
                     ctx.beginPath();
-                    ctx.arc(this.pos.x, this.pos.y, 30, 0, Math.PI * 2);
+                    ctx.arc(this.x, this.y, rad, 0, Math.PI * 2);
                     ctx.stroke();
+                    let pulse = Math.sin(t * 0.02) * 5;
+                    ctx.lineWidth = 3 + pulse;
+                    ctx.stroke();
+                    ctx.lineWidth = 2;
                 }
+                ctx.restore();
             }
-        }
-
-        class Projectile {
-            constructor(pos, vel, color, dmg, type, pl, owner = null, id = 0) {
-                this.pos = pos;
-                this.vel = vel;
-                this.color = color;
-                this.dmg = dmg * (1 + pl / 16);
-                this.type = type;
-                this.pl = pl;
-                this.owner = owner;
-                this.id = id;
-                this.life = Infinity;
-                this.size = type === 'beta' ? 8 : 5;
-                this.bounces = 0;
-                this.maxBounces = type === 'recursive' ? 3 + pl : 0;
-                this.launchTime = Date.now();
-            }
-            update(dt) {
-                this.pos = this.pos.add(this.vel.mul(dt));
-                // Homing
-                if (['magic', 'curve', 'missile'].includes(this.type)) {
-                    let target = this.type === 'curve' || this.type === 'missile' ? findNearestEnemy(this.pos) : (this.type === 'magic' && this.pl > 10 ? findNearestEnemy(this.pos) : null);
-                    if (target) {
-                        let steerStrength = this.type === 'missile' ? 0.2 : (this.type === 'curve' ? 0.1 : 0.05);
-                        let desired = target.pos.sub(this.pos).norm().mul(this.vel.mag());
-                        let steer = desired.sub(this.vel.norm().mul(this.vel.mag())).mul(steerStrength);
-                        this.vel = this.vel.add(steer.mul(dt * 60));
-                        // Curve sin
-                        if (this.type === 'curve') {
-                            let time = (Date.now() - this.launchTime) / 1000;
-                            let perp = new Vector(-this.vel.y, this.vel.x).norm();
-                            this.vel = this.vel.add(perp.mul(Math.sin(time * 5) * 20 * dt));
-                        }
-                    }
-                }
-                // Bounce walls
-                if (this.type === 'recursive') {
-                    if (this.pos.x <= 0 || this.pos.x >= GAME_WIDTH) {
-                        this.vel.x *= -1;
-                        this.pos.x = Math.max(0, Math.min(GAME_WIDTH, this.pos.x));
-                        this.bounces++;
-                    }
-                    if (this.pos.y <= 0 || this.pos.y >= GAME_HEIGHT) {
-                        this.vel.y *= -1;
-                        this.pos.y = Math.max(0, Math.min(GAME_HEIGHT, this.pos.y));
-                        this.bounces++;
-                    }
-                    if (this.bounces > this.maxBounces) this.life = 0;
-                }
-                // Proj vs proj reflect
-                if (this.type === 'shieldAttack') {
-                    projectiles.forEach(other => {
-                        if (other !== this && other.owner !== player && this.pos.sub(other.pos).mag() < this.size + other.size) {
-                            other.vel = other.vel.mul(-1);
-                            other.owner = player;
-                            addParticles(this.pos, 'spark', 5);
-                        }
-                    });
-                }
-                // Entity collision
-                let targets = this.owner === player ? enemies : [player];
-                for (let t of targets) {
-                    if (this.pos.sub(t.pos).mag() < this.size + t.size) {
-                        let hitDmg = t.takeDamage(this.dmg, this.type, this.pl);
-                        addParticles(t.pos, 'spark', 10);
-                        if (this.type === 'ice') t.applyDebuff('slow', 2, 0.5);
-                        if (this.type === 'beam' || this.type === 'beta') t.applyDebuff('stun', this.pl >= 8 ? 1 : 0, 1);
-                        if (this.type === 'lightning') {
-                            let chains = findNearestEnemies(t.pos, 3, 50);
-                            chains.forEach(c => c.takeDamage(this.dmg * 0.8, this.type, this.pl));
-                            if (this.pl > 10) t.applyDebuff('dot', 3, this.dmg / 3);
-                        }
-                        if (this.type === 'beta') t.applyDebuff('dot', 3, this.dmg / 3);
-                        if (this.type === 'missile') {
-                            targets.forEach(tt => {
-                                if (tt !== t && tt.pos.sub(t.pos).mag() < 50) tt.takeDamage(this.dmg * 0.5, this.type, this.pl);
+            fire() {
+                let id = this.selectedAttack;
+                let atk = this.attacks[id];
+                if (!atk.unlocked || Date.now() - atk.lastUse < atk.cd || this.mana < atk.mana) return;
+                this.mana -= atk.mana;
+                atk.lastUse = Date.now();
+                let dx = mouse.x - this.x;
+                let dy = mouse.y - this.y;
+                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                let dirX = dx / dist;
+                let dirY = dy / dist;
+                let potency = 1 + this.pl / 16;
+                let dmg = atk.damage * potency * this.atk / 20;
+                switch (atk.type) {
+                    case 'projectile':
+                    case 'spread':
+                    case 'cone':
+                        let count = atk.count || 1;
+                        let angleSpan = atk.angle || 0;
+                        for (let i = 0; i < count; i++) {
+                            let angle = (i - (count - 1) / 2) * angleSpan;
+                            let cosA = Math.cos(angle);
+                            let sinA = Math.sin(angle);
+                            let vx = (cosA * dirX - sinA * dirY) * atk.speed;
+                            let vy = (sinA * dirX + cosA * dirY) * atk.speed;
+                            projectiles.push({
+                                x: this.x, y: this.y, vx, vy, dmg, color: atk.color, size: atk.size || 5,
+                                owner: 'player', type: atk.name, homing: atk.homing * this.pl, bounces: atk.bounces,
+                                ignoreShield: atk.ignoreShield, reflect: atk.reflect, knockback: atk.knockback,
+                                effect: atk.effect, effectDur: atk.effectDur, effectVal: atk.effectVal,
+                                explode: atk.explode, explodeRad: atk.explodeRad, chain: atk.chain, chainRange: atk.chainRange,
+                                zigZag: atk.type === 'lightning', dot: atk.dot, dotDur: atk.dotDur, dotDmg: atk.dotDmg * potency
                             });
                         }
-                        if (this.type === 'recursive' && this.bounces < this.maxBounces) {
-                            let normal = this.pos.sub(t.pos).norm();
-                            this.vel = this.vel.sub(normal.mul(2 * this.vel.dot(normal)));
-                            this.bounces++;
-                            this.pos = this.pos.add(normal.mul(10)); // push out
-                        } else if (!['beam', 'beta'].includes(this.type)) {
-                            this.life = 0;
+                        if (atk.type === 'cone') {
+                            for (let p of projectiles.slice(-count)) {
+                                p.knockback = atk.knockback;
+                            }
                         }
-                    }
+                        break;
+                    case 'beam':
+                        beams.push({
+                            startX: this.x, startY: this.y, endX: mouse.x, endY: mouse.y,
+                            dmg: dmg * (atk.duration / 1000) / 0.5, // rate
+                            color: atk.color, thickness: atk.thickness, duration: atk.duration,
+                            startTime: Date.now(), pierce: atk.pierce, stun: atk.stun,
+                            dot: atk.dot, dotDur: atk.dotDur, dotDmg: atk.dotDmg * potency
+                        });
+                        break;
+                    case 'aoe':
+                        let aoeX = this.x + dirX * 200;
+                        let aoeY = this.y + dirY * 200;
+                        enemies.forEach(e => {
+                            let edx = aoeX - e.x;
+                            let edy = aoeY - e.y;
+                            if (Math.sqrt(edx*edx + edy*edy) < atk.radius) {
+                                let breakAmt = atk.break + this.pl * 10;
+                                if (e.shield > 0) e.shield = Math.max(0, e.shield - breakAmt);
+                                else e.takeDamage(dmg, this);
+                                for (let k = 0; k < 5; k++) {
+                                    particles.push(new Particle(e.x, e.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, atk.color, 2));
+                                }
+                            }
+                        });
+                        break;
+                    case 'lightning':
+                        let target = enemies.reduce((closest, e) => {
+                            let d = Math.hypot(e.x - this.x, e.y - this.y);
+                            return d < (closest ? Math.hypot(closest.x - this.x, closest.y - this.y) : Infinity) ? e : closest;
+                        }, null);
+                        if (target) {
+                            let bolt = { x: this.x, y: this.y, tx: target.x, ty: target.y, dmg, color: atk.color, chains: atk.chains + (this.pl >= 4 ? 3 : 0), chainRange: atk.chainRange, zigZag: true, dot: this.pl >= 10 };
+                            this.drawLightning(bolt);
+                            target.takeDamage(dmg, this, { stun: 500, dot: bolt.dot ? { dur: 3000, dmg: 5 } : null });
+                            // chain
+                            let chained = [target];
+                            for (let c = 0; c < bolt.chains; c++) {
+                                let next = enemies.find(e => !chained.includes(e) && Math.hypot(e.x - target.x, e.y - target.y) < bolt.chainRange);
+                                if (next) {
+                                    let cbolt = { x: target.x, y: target.y, tx: next.x, ty: next.y, dmg: dmg * 0.7, color: atk.color };
+                                    this.drawLightning(cbolt);
+                                    next.takeDamage(cbolt.dmg, this);
+                                    chained.push(next);
+                                    target = next;
+                                } else break;
+                            }
+                        }
+                        break;
+                    case 'buff':
+                        this.speedBuffEnd = Date.now() + atk.duration;
+                        if (this.pl >= 12) this.invulnEnd = Date.now() + atk.duration;
+                        break;
                 }
-                if (this.life === Infinity && (this.pos.x < 0 || this.pos.x > GAME_WIDTH || this.pos.y < 0 || this.pos.y > GAME_HEIGHT)) this.life = 0;
-                this.life -= dt;
+                if (this.pl === 16) shake = 10;
             }
-            render(ctx) {
-                ctx.fillStyle = this.color;
+            drawLightning(bolt) {
+                ctx.strokeStyle = bolt.color;
+                ctx.lineWidth = 3;
                 ctx.beginPath();
-                ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-                // Trail
-                ctx.globalAlpha = 0.5;
-                ctx.fillStyle = this.color;
+                ctx.moveTo(bolt.x, bolt.y);
+                let steps = 20;
+                for (let s = 1; s <= steps; s++) {
+                    let px = bolt.x + (bolt.tx - bolt.x) * (s / steps) + (Math.random() - 0.5) * 20;
+                    let py = bolt.y + (bolt.ty - bolt.y) * (s / steps) + (Math.random() - 0.5) * 20;
+                    ctx.lineTo(px, py);
+                }
+                ctx.stroke();
+            }
+            takeDamage(dmg, from = null, opts = {}) {
+                if (this.invulnEnd > Date.now()) return;
+                let actual = Math.max(1, dmg * this.atk / 20 - this.def * (1 - this.pl * 0.05));
+                this.health = Math.max(0, this.health - actual);
+                for (let k = 0; k < 10; k++) {
+                    particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*5, (Math.random()-0.5)*5, 'red', 3));
+                }
+                if (opts.stun) { /* player no stun */ }
+                if (opts.dot && opts.dot.dur) { /* implement dot timer if needed */ }
+            }
+        }
+
+        class Enemy {
+            constructor(type, pl) {
+                this.x = Math.random() * CW;
+                this.y = Math.random() * CH;
+                this.type = type;
+                this.pl = Math.min(pl, 16);
+                this.health = 50 + wave * 20;
+                this.maxHealth = this.health;
+                this.speed = 1 + wave * 0.2;
+                this.atk = 10 + wave * 5;
+                this.def = 5 + wave * 2;
+                this.color = { Fire: 'red', Ice: 'cyan', Shadow: 'gray', Storm: 'yellow', Beast: 'brown' }[type] || 'gray';
+                this.shield = this.pl >= 4 ? 50 : 0;
+                this.shieldMax = this.shield;
+                this.lastAttack = 0;
+                this.dodgeChance = 0.02 * this.pl;
+                this.stunEnd = 0;
+                this.slowMult = 1;
+                this.slowEnd = 0;
+                this.dotDmg = 0;
+                this.dotEnd = 0;
+                this.sizeMult = 1;
+                if (wave % 5 === 0) {
+                    this.health *= 3;
+                    this.sizeMult = 1.5;
+                    this.color = 'darkred';
+                }
+                this.attacks = { ...ATTACKS };
+                // unlock based on pl
+                let unlockedIds = [1];
+                if (this.pl >= 2) unlockedIds.push(2,4);
+                if (this.pl >= 4) unlockedIds.push(5,7);
+                if (this.pl >= 6) unlockedIds.push(3,6,8);
+                if (this.pl >= 8) unlockedIds.push(9,10);
+                if (this.pl >= 10) unlockedIds.push(11,12);
+                if (this.pl >= 12) unlockedIds.push(13);
+                if (this.pl >= 14) unlockedIds.push(14);
+                unlockedIds.forEach(id => this.attacks[id].unlocked = true);
+                this.selectedAttack = unlockedIds[Math.floor(Math.random() * unlockedIds.length)];
+            }
+            draw(ctx, t) {
+                let ox = 0, oy = 0;
+                if (player.pl === 16 && shake > 0) {
+                    ox = (Math.random() - 0.5) * 3;
+                    oy = (Math.random() - 0.5) * 3;
+                }
+                ctx.save();
+                ctx.translate(ox, oy);
+                ctx.scale(this.sizeMult, this.sizeMult);
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                // head
                 ctx.beginPath();
-                ctx.arc(this.pos.x - this.vel.x * 0.05, this.pos.y - this.vel.y * 0.05, this.size * 0.5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1;
+                ctx.arc(this.x, this.y - 40, 8, 0, Math.PI * 2);
+                ctx.stroke();
+                if (this.pl >= 8) {
+                    // crown
+                    ctx.fillStyle = 'gold';
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - 10, this.y - 48);
+                    ctx.lineTo(this.x + 10, this.y - 48);
+                    ctx.lineTo(this.x, this.y - 55);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                // body
+                ctx.strokeStyle = this.color;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 32);
+                ctx.lineTo(this.x, this.y + 20);
+                ctx.stroke();
+                // arms
+                let armSway = Math.sin(t * 0.005 + this.x * 0.01) * 10; // unique
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 20);
+                ctx.lineTo(this.x - 15 + armSway, this.y);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 20);
+                ctx.lineTo(this.x + 15 - armSway, this.y);
+                ctx.stroke();
+                // legs
+                let legSway = Math.sin(t * 0.005 + this.y * 0.01 + Math.PI) * 8;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 20);
+                ctx.lineTo(this.x - 8 + legSway, this.y + 40);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 20);
+                ctx.lineTo(this.x + 8 - legSway, this.y + 40);
+                ctx.stroke();
+                // shield
+                if (this.shield > 0) {
+                    ctx.strokeStyle = `rgba(255,255,255,0.5)`;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 30, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+            update(dt) {
+                if (this.stunEnd > Date.now()) return;
+                if (this.slowEnd > Date.now()) this.slowMult = 0.5; else this.slowMult = 1;
+                if (this.dotEnd > Date.now()) {
+                    this.health -= this.dotDmg / 60 * dt; // per frame
+                    if (this.health <= 0) this.die();
+                }
+                let flee = player.pl === 16 && Math.random() < 0.1;
+                let dx = (flee ? this.x - player.x : player.x - this.x);
+                let dy = (flee ? this.y - player.y : player.y - this.y);
+                let dist = Math.hypot(dx, dy);
+                if (dist > 30) {
+                    let moveSpeed = this.speed * this.slowMult * (1 - this.dodgeChance);
+                    if (Math.random() < this.dodgeChance * dt / 16) {
+                        dx = (Math.random() - 0.5) * 100;
+                        dy = (Math.random() - 0.5) * 100;
+                        dist = Math.hypot(dx, dy) || 1;
+                    }
+                    this.x += (dx / dist) * moveSpeed;
+                    this.y += (dy / dist) * moveSpeed;
+                } else {
+                    player.takeDamage(this.atk, this);
+                }
+                if (Date.now() - this.lastAttack > Math.max(2000 - this.pl * 100, 500)) {
+                    this.fire();
+                    this.lastAttack = Date.now();
+                }
+                this.x = Math.max(0, Math.min(CW, this.x));
+                this.y = Math.max(0, Math.min(CH, this.y));
+            }
+            fire() {
+                let id = this.attacks[this.selectedAttack];
+                if (!id.unlocked || Date.now() - id.lastUse < id.cd) return;
+                id.lastUse = Date.now();
+                let dx = player.x - this.x;
+                let dy = player.y - this.y;
+                let dist = Math.hypot(dx, dy) || 1;
+                let dirX = dx / dist;
+                let dirY = dy / dist;
+                let potency = 1 + this.pl / 16;
+                let dmg = id.damage * potency * this.atk / 10;
+                // similar to player fire, but simplified, random attack type
+                let proj = {
+                    x: this.x, y: this.y,
+                    vx: dirX * (id.speed || 5), vy: dirY * (id.speed || 5),
+                    dmg, color: id.color || this.color, size: id.size || 5,
+                    owner: 'enemy', type: id.name, homing: id.homing || 0,
+                    pierce: id.pierce || false, ignoreShield: id.ignoreShield || false
+                };
+                if (id.type === 'spread') {
+                    // simplified single for enemy
+                    projectiles.push(proj);
+                } else {
+                    projectiles.push(proj);
+                }
+            }
+            takeDamage(dmg, from, opts = {}) {
+                let actual = Math.max(1, dmg - this.def);
+                if (this.shield > 0) {
+                    this.shield -= actual * (from && from.attacks[12] ? 2 : 1); // double if shield attack
+                    if (this.shield <= 0) this.shield = 0;
+                } else {
+                    this.health -= actual;
+                }
+                if (opts.stun) this.stunEnd = Date.now() + opts.stun;
+                if (opts.effect === 'slow') {
+                    this.slowEnd = Date.now() + opts.effectDur;
+                }
+                if (opts.dot) {
+                    this.dotDmg = opts.dotDmg;
+                    this.dotEnd = Date.now() + opts.dotDur;
+                }
+                if (opts.knockback) {
+                    let dx = this.x - from.x;
+                    let dy = this.y - from.y;
+                    let kdist = Math.hypot(dx, dy) || 1;
+                    this.x += (dx / kdist) * opts.knockback;
+                    this.y += (dy / kdist) * opts.knockback;
+                }
+                for (let k = 0; k < 5; k++) {
+                    particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*8, (Math.random()-0.5)*8, 'yellow', 2));
+                }
+                if (this.health <= 0) this.die();
+            }
+            die() {
+                player.xp += 10 * this.pl;
+                kills++;
+                for (let k = 0; k < 20; k++) {
+                    particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, this.color, 4));
+                }
+                enemies = enemies.filter(e => e !== this);
             }
         }
 
         class Particle {
-            constructor(pos, vel, color, life) {
-                this.pos = pos;
-                this.vel = vel;
+            constructor(x, y, vx, vy, color, size) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
                 this.color = color;
-                this.life = life;
-                this.maxLife = life;
-                this.size = 2 + Math.random() * 3;
+                this.size = size;
+                this.life = 1.0;
+                this.decay = 0.02;
             }
             update(dt) {
-                this.pos = this.pos.add(this.vel.mul(dt));
-                this.vel = this.vel.mul(0.98);
-                this.life -= dt;
+                this.x += this.vx * dt / 16;
+                this.y += this.vy * dt / 16;
+                this.vy += 0.2 * dt / 16; // gravity
+                this.life -= this.decay * dt / 16;
             }
-            render(ctx) {
-                let alpha = this.life / this.maxLife;
-                ctx.globalAlpha = alpha;
+            draw(ctx) {
+                ctx.globalAlpha = this.life;
                 ctx.fillStyle = this.color;
-                ctx.fillRect(this.pos.x - this.size / 2, this.pos.y - this.size / 2, this.size, this.size);
+                ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
                 ctx.globalAlpha = 1;
             }
         }
 
-        class Ability {
-            constructor(name, maxCd, manaCost, baseDmg, type, color, pl, id = 0) {
-                this.name = name;
-                this.id = id;
-                this.maxCd = maxCd;
-                this.cd = 0;
-                this.manaCost = manaCost;
-                this.dmg = baseDmg;
-                this.type = type;
-                this.color = color;
-                this.pl = pl;
-            }
-            fire(from, to, owner) {
-                let dir = to.sub(from).norm();
-                switch (this.id) {
-                    case 0: // Magic Shot
-                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(200), this.color, this.dmg, 'magic', this.pl, owner, this.id));
-                        break;
-                    case 1: // Tri-Shot
-                        let angle = Math.atan2(dir.y, dir.x);
-                        for (let a = -0.52; a <= 0.52; a += 0.52) {
-                            let d = new Vector(Math.cos(angle + a), Math.sin(angle + a)).mul(180);
-                            projectiles.push(new Projectile(from.add(dir.mul(10)), d, this.color, this.dmg, 'tri', this.pl, owner, this.id));
-                        }
-                        break;
-                    case 2: // Beam Shot
-                        fireBeam(from, to, this.dmg, this.pl, 'white', 3, owner);
-                        break;
-                    case 3: // Ice Shard
-                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(150), 'cyan', this.dmg, 'ice', this.pl, owner, this.id));
-                        break;
-                    case 4: // Lightning
-                        fireLightning(from, to, this.dmg, this.pl, owner);
-                        break;
-                    case 5: // Curve Shot
-                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(180), 'green', this.dmg, 'curve', this.pl, owner, this.id));
-                        break;
-                    case 6: // Shield Breaker
-                        fireAoE(to, 50 + this.pl * 5, this.dmg * 0.5, 'purple', true, this.pl, owner);
-                        break;
-                    case 7: // Homing Missile
-                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(150), 'red', this.dmg, 'missile', this.pl, owner, this.id));
-                        break;
-                    case 8: // Force Wave
-                        fireCone(from, to, this.dmg, 200, Math.PI / 3, this.pl, owner);
-                        break;
-                    case 9: // Penta Shot
-                        let pAngle = Math.atan2(dir.y, dir.x);
-                        for (let a = -0.785; a <= 0.785; a += 0.3925) {
-                            let d = new Vector(Math.cos(pAngle + a), Math.sin(pAngle + a)).mul(160);
-                            projectiles.push(new Projectile(from.add(dir.mul(10)), d, 'blue', this.dmg, 'penta', this.pl, owner, this.id));
-                        }
-                        break;
-                    case 10: // Recursive Shot
-                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(180), 'violet', this.dmg, 'recursive', this.pl, owner, this.id));
-                        break;
-                    case 11: // Shield Attack
-                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(200), 'silver', this.dmg, 'shieldAttack', this.pl, owner, this.id));
-                        break;
-                    case 12: // Beta Laser
-                        fireBeam(from, to, this.dmg * 2, this.pl, 'red', 10, owner);
-                        break;
-                    case 13: // Super Speed
-                        owner.speedBuff = 2;
-                        owner.speedBuffTimer = 5;
-                        if (owner.pl >= 12) owner.invulnTimer = 5;
-                        addParticles(owner.pos, 'blue', 15);
-                        break;
-                }
-            }
-        }
-
-        const ABILITIES = [
-            { name: 'Magic Shot', maxCd: 0.5, manaCost: 5, baseDmg: 20, type: 'projectile', color: 'orange' },
-            { name: 'Tri-Shot', maxCd: 0.8, manaCost: 8, baseDmg: 15, type: 'spread', color: 'blue' },
-            { name: 'Beam Shot', maxCd: 1.5, manaCost: 15, baseDmg: 40, type: 'beam', color: 'white' },
-            { name: 'Ice Shard', maxCd: 1.0, manaCost: 10, baseDmg: 25, type: 'projectile', color: 'cyan' },
-            { name: 'Lightning', maxCd: 2.0, manaCost: 20, baseDmg: 30, type: 'chain', color: 'yellow' },
-            { name: 'Curve Shot', maxCd: 0.7, manaCost: 7, baseDmg: 22, type: 'homing', color: 'green' },
-            { name: 'Shield Breaker', maxCd: 3.0, manaCost: 25, baseDmg: 10, type: 'aoe', color: 'purple' },
-            { name: 'Homing Missile', maxCd: 2.5, manaCost: 18, baseDmg: 35, type: 'homing', color: 'red' },
-            { name: 'Force Wave', maxCd: 2.0, manaCost: 15, baseDmg: 28, type: 'cone', color: 'blue' },
-            { name: 'Penta Shot', maxCd: 0.4, manaCost: 12, baseDmg: 18, type: 'spread', color: 'blue' },
-            { name: 'Recursive Shot', maxCd: 4.0, manaCost: 30, baseDmg: 25, type: 'bounce', color: 'violet' },
-            { name: 'Shield Attack', maxCd: 1.2, manaCost: 12, baseDmg: 30, type: 'projectile', color: 'silver' },
-            { name: 'Beta Laser', maxCd: 5.0, manaCost: 40, baseDmg: 60, type: 'beam', color: 'red' },
-            { name: 'Super Speed', maxCd: 10.0, manaCost: 25, baseDmg: 0, type: 'buff', color: 'gold' }
-        ];
-
-        function fireBeam(from, to, dmg, pl, color, width, owner) {
-            let dir = to.sub(from).norm();
-            let length = from.sub(to).mag();
-            let step = dir.mul(5);
-            let current = from.add(dir.mul(10));
-            while (current.sub(from).mag() < length) {
-                let targets = owner === player ? enemies : [player];
-                for (let t of targets) {
-                    if (current.sub(t.pos).mag() < t.size + 5) {
-                        t.takeDamage(dmg, 'beam', pl);
-                        addParticles(t.pos, 'white', 8);
+        function updateProjectiles() {
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                let p = projectiles[i];
+                // homing
+                if (p.homing > 0) {
+                    let target = p.owner === 'player' ? enemies[0] : player;
+                    if (target) {
+                        let tdx = target.x - p.x;
+                        let tdy = target.y - p.y;
+                        let tdist = Math.hypot(tdx, tdy) || 1;
+                        p.vx += (tdx / tdist * p.homing);
+                        p.y += (tdy / tdist * p.homing);
+                        let pspeed = Math.hypot(p.vx, p.vy);
+                        p.vx = p.vx / pspeed * (p.speed || 5);
+                        p.vy = p.vy / pspeed * (p.speed || 5);
                     }
                 }
-                current = current.add(step);
-            }
-            // Render will be handled in game loop, but for instant, log
-            console.log('Beam fired');
-        }
-
-        function fireLightning(from, to, dmg, pl, owner) {
-            // Damage first target
-            let targets = owner === player ? enemies : [player];
-            let nearest = findNearestTo(from, targets);
-            if (nearest) nearest.takeDamage(dmg, 'lightning', pl);
-            console.log('Lightning fired');
-        }
-
-        function fireAoE(pos, radius, dmg, color, breakShield, pl, owner) {
-            let targets = owner === player ? enemies : [player];
-            targets.forEach(t => {
-                if (t.pos.sub(pos).mag() < radius) {
-                    if (breakShield) t.shieldStrength -= 50 + pl * 10;
-                    t.takeDamage(dmg, 'aoe', pl);
-                    addParticles(t.pos, color, 10);
+                // zig zag
+                if (p.zigZag) {
+                    p.vx += (Math.random() - 0.5) * 2;
+                    p.vy += (Math.random() - 0.5) * 2;
                 }
-            });
-            console.log('AoE fired');
-        }
-
-        function fireCone(from, to, dmg, length, angle, pl, owner) {
-            let dir = to.sub(from).norm();
-            let coneAng = Math.atan2(dir.y, dir.x);
-            let targets = owner === player ? enemies : [player];
-            targets.forEach(t => {
-                let tDist = t.pos.sub(from).mag();
-                if (tDist < length) {
-                    let tAng = Math.atan2(t.pos.y - from.y, t.pos.x - from.x);
-                    let diff = Math.abs(tAng - coneAng);
-                    if (diff < angle / 2 || Math.abs(diff - Math.PI * 2) < angle / 2) {
-                        t.takeDamage(dmg, 'cone', pl);
-                        // Knockback
-                        let kbDir = t.pos.sub(from).norm();
-                        t.vel = t.vel.add(kbDir.mul(100));
-                        addParticles(t.pos, 'blue', 5);
-                    }
-                }
-            });
-            console.log('Cone fired');
-        }
-
-        function findNearestEnemy(pos) {
-            return enemies.reduce((closest, e) => {
-                let d = e.pos.sub(pos).mag();
-                return d < (closest ? closest.pos.sub(pos).mag() : Infinity) ? e : closest;
-            }, null);
-        }
-
-        function findNearestEnemies(pos, count, range) {
-            return enemies.filter(e => e.pos.sub(pos).mag() < range).sort((a, b) => a.pos.sub(pos).mag() - b.pos.sub(pos).mag()).slice(0, count);
-        }
-
-        function findNearestTo(pos, targets) {
-            return targets.reduce((closest, t) => {
-                let d = t.pos.sub(pos).mag();
-                return d < (closest ? closest.pos.sub(pos).mag() : Infinity) ? t : closest;
-            }, null);
-        }
-
-        function addParticles(pos, type, count) {
-            const colors = { spark: 'yellow', white: 'white', blue: 'blue' };
-            for (let i = 0; i < count; i++) {
-                let angle = Math.random() * Math.PI * 2;
-                let speed = Math.random() * 100 + 50;
-                let vel = new Vector(Math.cos(angle) * speed, Math.sin(angle) * speed);
-                let color = colors[type] || 'white';
-                particles.push(new Particle(pos.add(new Vector(Math.random() * 10 - 5, Math.random() * 10 - 5)), vel, color, Math.random() * 1 + 0.5));
-            }
-        }
-
-        function getUpgradePool(player) {
-            let availableUnlocks = ABILITIES.map((a, i) => i).filter(i => !player.unlocks.includes(i));
-            let pool = [];
-            const specials = [1,2,3,4,5,6,7,8,9,10,11,12,13]; // indices 1+
-            for (let i = 0; i < 12; i++) { // generate pool
-                if (availableUnlocks.length > 0 && Math.random() < (player.level < 10 ? 0.7 : 0.3)) {
-                    let idx = availableUnlocks.splice(Math.random() * availableUnlocks.length | 0, 1)[0];
-                    pool.push({
-                        name: `Unlock ${ABILITIES[idx].name}`,
-                        apply: () => {
-                            let newAbil = new Ability(ABILITIES[idx].name, ABILITIES[idx].maxCd, ABILITIES[idx].manaCost, ABILITIES[idx].baseDmg, ABILITIES[idx].type, ABILITIES[idx].color, player.pl, idx);
-                            if (specials.includes(idx)) {
-                                player.unlockedAbilities.unshift(newAbil);
+                p.x += p.vx;
+                p.y += p.vy;
+                // draw
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                // trail
+                ctx.globalAlpha = 0.5;
+                ctx.beginPath();
+                ctx.arc(p.x - p.vx * 0.5, p.y - p.vy * 0.5, p.size * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                // collisions
+                let hit = false;
+                if (p.owner === 'player') {
+                    for (let j = enemies.length - 1; j >= 0; j--) {
+                        let e = enemies[j];
+                        let edx = p.x - e.x;
+                        let edy = p.y - e.y;
+                        if (Math.hypot(edx, edy) < e.sizeMult * 15 + p.size) {
+                            let opts = { effect: p.effect, effectDur: p.effectDur, effectVal: p.effectVal, knockback: p.knockback, dot: p.dot ? { dur: p.dotDur, dmg: p.dotDmg } : null, stun: p.type === 'Beam Shot' && player.pl >= 8 ? 1000 : 0 };
+                            if (p.ignoreShield || e.shield <= 0) {
+                                e.takeDamage(p.dmg, player, opts);
                             } else {
-                                player.unlockedAbilities.push(newAbil);
+                                e.shield -= p.dmg;
                             }
-                            player.unlocks.push(idx);
-                        },
-                        type: 'unlock'
-                    });
-                } else if (player.unlockedAbilities.length > 0) {
-                    let abilIdx = Math.random() * player.unlockedAbilities.length | 0;
-                    let abil = player.unlockedAbilities[abilIdx];
-                    if (Math.random() < 0.5) {
-                        pool.push({
-                            name: `+10 DMG ${abil.name}`,
-                            apply: () => { abil.dmg += 10; },
-                            type: 'buff'
-                        });
-                    } else {
-                        pool.push({
-                            name: `-0.1s CD ${abil.name}`,
-                            apply: () => { abil.maxCd = Math.max(0.1, abil.maxCd - 0.1); },
-                            type: 'buff'
-                        });
+                            if (p.explode) {
+                                enemies.forEach(ee => {
+                                    if (ee !== e && Math.hypot(ee.x - e.x, ee.y - e.y) < p.explodeRad) {
+                                        ee.takeDamage(p.dmg * 0.5, player);
+                                    }
+                                });
+                            }
+                            if (p.bounces > 0) {
+                                // bounce logic simple: reverse dir, reduce bounces
+                                p.vx = -p.vx;
+                                p.vy = -p.vy;
+                                p.bounces--;
+                            } else if (!p.pierce) {
+                                projectiles.splice(i, 1);
+                                hit = true;
+                                break;
+                            }
+                        }
                     }
                 } else {
-                    // Stats rare
-                    if (Math.random() < 0.05 && player.pl < 16) {
-                        pool.push({
-                            name: 'PL +1',
-                            apply: () => { player.pl++; },
-                            type: 'stat'
-                        });
-                    } else if (Math.random() < 0.2) {
-                        pool.push({
-                            name: 'ATK +2',
-                            apply: () => { player.atk += 2; },
-                            type: 'stat'
-                        });
-                    } else if (Math.random() < 0.2) {
-                        pool.push({
-                            name: 'DEF +2',
-                            apply: () => { player.def += 2; },
-                            type: 'stat'
-                        });
+                    // enemy proj to player
+                    if (player.shielding && player.shieldStrength > 0 && Math.hypot(p.x - player.x, p.y - player.y) < player.shieldRadius) {
+                        player.shieldStrength -= p.dmg * player.shieldYield;
+                        player.mana -= p.dmg * player.shieldYield;
+                        if (player.shieldStrength <= 0) player.shielding = false;
+                        for (let k = 0; k < 5; k++) {
+                            particles.push(new Particle(p.x, p.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, 'green', 3));
+                        }
+                        projectiles.splice(i, 1);
+                        continue;
+                    }
+                    if (p.reflect && player.shielding) {
+                        // reflect
+                        p.vx = -p.vx;
+                        p.vy = -p.vy;
+                        p.owner = 'player';
+                        continue;
+                    }
+                    let pdx = p.x - player.x;
+                    let pdy = p.y - player.y;
+                    if (Math.hypot(pdx, pdy) < 15 + p.size && !player.invulnEnd > Date.now()) {
+                        player.takeDamage(p.dmg);
+                        projectiles.splice(i, 1);
+                        hit = true;
+                    }
+                }
+                // reflect enemy shots with shield attack proj? simplified, ignore for now
+                // out of bounds
+                if (p.x < 0 || p.x > CW || p.y < 0 || p.y > CH) {
+                    if (p.bounces > 0) {
+                        // wall bounce
+                        if (p.x < 0 || p.x > CW) p.vx = -p.vx;
+                        if (p.y < 0 || p.y > CH) p.vy = -p.vy;
+                        p.x = Math.max(0, Math.min(CW, p.x));
+                        p.y = Math.max(0, Math.min(CH, p.y));
+                        p.bounces--;
                     } else {
-                        pool.push({
-                            name: 'Shield Yield -0.1',
-                            apply: () => { player.shieldYield = Math.max(0.1, player.shieldYield - 0.1); },
-                            type: 'shield'
-                        });
+                        projectiles.splice(i, 1);
+                    }
+                }
+                if (!hit && (p.x < -50 || p.x > CW + 50 || p.y < -50 || p.y > CH + 50)) {
+                    projectiles.splice(i, 1);
+                }
+            }
+            // proj-proj collision for reflect
+            for (let ii = projectiles.length - 1; ii >= 0; ii--) {
+                for (let jj = ii + 1; jj < projectiles.length; jj++) {
+                    let p1 = projectiles[ii];
+                    let p2 = projectiles[jj];
+                    if (p1.owner !== p2.owner && (p1.reflect || p2.reflect)) {
+                        let pdx = p1.x - p2.x;
+                        let pdy = p1.y - p2.y;
+                        if (Math.hypot(pdx, pdy) < p1.size + p2.size) {
+                            // reflect the non-reflect one
+                            if (p1.reflect) {
+                                p2.vx = -p2.vx;
+                                p2.vy = -p2.vy;
+                                p2.owner = p1.owner;
+                            } else {
+                                p1.vx = -p1.vx;
+                                p1.vy = -p1.vy;
+                                p1.owner = p2.owner;
+                            }
+                        }
                     }
                 }
             }
-            // Shuffle and take 3 unique
-            for (let i = pool.length - 1; i > 0; i--) {
-                let j = Math.random() * (i + 1) | 0;
-                [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+
+        function updateBeams() {
+            for (let i = beams.length - 1; i >= 0; i--) {
+                let b = beams[i];
+                let elapsed = Date.now() - b.startTime;
+                if (elapsed > b.duration) {
+                    beams.splice(i, 1);
+                    continue;
+                }
+                // draw
+                ctx.strokeStyle = b.color;
+                ctx.lineWidth = b.thickness;
+                ctx.beginPath();
+                ctx.moveTo(b.startX, b.startY);
+                ctx.lineTo(b.endX, b.endY);
+                ctx.stroke();
+                // glow
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = b.color;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                // damage
+                let rate = b.dmg / (b.duration / 16); // per frame
+                enemies.forEach(e => {
+                    // line intersection simple: check if on line
+                    let ex = e.x - b.startX;
+                    let ey = e.y - b.startY;
+                    let len = Math.hypot(b.endX - b.startX, b.endY - b.startY);
+                    let proj = (ex * (b.endX - b.startX) + ey * (b.endY - b.startY)) / (len * len);
+                    let closestX = b.startX + proj * (b.endX - b.startX);
+                    let closestY = b.startY + proj * (b.endY - b.startY);
+                    if (Math.hypot(e.x - closestX, e.y - closestY) < 20 && proj >= 0 && proj <= 1) {
+                        let opts = { stun: b.stun, dot: b.dot ? { dur: b.dotDur, dmg: b.dotDmg } : null };
+                        e.takeDamage(rate, player, opts);
+                    }
+                });
             }
-            return pool.slice(0, 3);
+        }
+
+        function updateParticles(dt) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update(dt);
+                if (particles[i].life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function drawUI() {
+            ctx.fillStyle = 'white';
+            ctx.font = '16px Arial';
+            ctx.fillText(`Health: ${Math.floor(player.health)}/${player.maxHealth}`, 10, 20);
+            ctx.fillText(`Mana: ${Math.floor(player.mana)}/${player.maxMana}`, 10, 40);
+            ctx.fillText(`PL: ${player.pl}`, 10, 60);
+            ctx.fillText(`ATK: ${player.atk} DEF: ${player.def}`, 10, 80);
+            ctx.fillText(`Level: ${player.level} XP: ${player.xp}/${player.nextLevelXp}`, 10, 100);
+            ctx.fillText(`Wave: ${wave} Kills: ${kills}`, 10, 120);
+            // spells
+            ctx.fillText('Spells:', 620, 20);
+            let sy = 40;
+            for (let id in player.attacks) {
+                let a = player.attacks[id];
+                ctx.fillStyle = id == player.selectedAttack ? 'lime' : (a.unlocked ? 'white' : 'gray');
+                let cd = a.cd ? Math.max(0, (a.cd - (Date.now() - a.lastUse)) / 1000) : 0;
+                let text = `${id}: ${a.name}${!a.unlocked ? ' [LOCKED]' : ''}${cd > 0 ? ` [${cd.toFixed(1)}s]` : ''}`;
+                ctx.fillText(text, 620, sy);
+                sy += 20;
+                if (sy > 550) break;
+            }
+            ctx.fillStyle = 'white';
+            ctx.fillText('Controls: WASD/Arrows Move, Mouse Aim/Fire, SPACE Shield, , Cycle', 10, 580);
+        }
+
+        function drawMenu() {
+            ctx.fillStyle = 'white';
+            ctx.font = '32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText("Alternate's Magical Evolution", CX, 200);
+            ctx.font = '20px Arial';
+            ctx.fillText('Press P to Play', CX, 250);
+            ctx.fillText('Press A for Attributes', CX, 280);
+            ctx.textAlign = 'left';
+        }
+
+        function drawAttributes() {
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Attributes', CX, 50);
+            ctx.font = '16px Arial';
+            let ay = 80;
+            ctx.fillText(`Power Level: ${player.pl}/16`, CX, ay); ay += 25;
+            ctx.fillText(`Attack: ${player.atk}`, CX, ay); ay += 25;
+            ctx.fillText(`Defense: ${player.def}`, CX, ay); ay += 25;
+            ctx.fillText(`Level: ${player.level}`, CX, ay); ay += 25;
+            ctx.fillText(`Unlocked Spells: ${Array.from(player.unlocks).length}/14`, CX, ay); ay += 25;
+            ctx.fillText('Press ESC to return', CX, CH - 50);
+            ctx.textAlign = 'left';
+            // list unlocks
+            ay = 150;
+            ctx.textAlign = 'left';
+            for (let id of player.unlocks) {
+                ctx.fillText(`${id}: ${player.attacks[id].name}`, 300, ay);
+                ay += 20;
+            }
+            ctx.textAlign = 'left';
+        }
+
+        function generateUpgrades() {
+            let pool = [];
+            // unlocks 70% early
+            let unlockPool = [];
+            for (let id = 2; id <= 14; id++) {
+                if (!player.unlocks.has(id)) unlockPool.push({ type: 'unlock', id, text: `Unlock ${player.attacks[id].name}` });
+            }
+            if (player.level < 10 && Math.random() < 0.7) {
+                for (let i = 0; i < 3; i++) {
+                    if (unlockPool.length > 0) {
+                        let rand = unlockPool.splice(Math.floor(Math.random() * unlockPool.length), 1)[0];
+                        pool.push(rand);
+                    }
+                }
+            } else {
+                // mix buffs, stats
+                let buffPool = [];
+                for (let id in player.attacks) {
+                    if (player.unlocks.has(id)) {
+                        buffPool.push({ type: 'buff', id, text: `+10 DMG to ${player.attacks[id].name}` });
+                        buffPool.push({ type: 'buff', id, text: `-50ms CD to ${player.attacks[id].name}` });
+                    }
+                }
+                let statPool = [
+                    { type: 'stat', what: 'atk', val: 2, text: '+2 ATK' },
+                    { type: 'stat', what: 'def', val: 2, text: '+2 DEF' },
+                    { type: 'stat', what: 'pl', val: 1, text: '+1 PL (if <16)' },
+                    { type: 'shield', what: 'yield', val: -0.1, text: 'Shield Yield -0.1' },
+                    { type: 'shield', what: 'omni', text: 'Omni Shield (+20 rad)' }
+                ];
+                // random 3
+                while (pool.length < 3) {
+                    let choice = Math.random() < 0.4 ? buffPool : (Math.random() < 0.3 ? statPool : unlockPool);
+                    if (choice.length === 0) choice = buffPool;
+                    let up = choice.splice(Math.floor(Math.random() * choice.length), 1)[0];
+                    if (up) pool.push(up);
+                }
+            }
+            upgrades = pool.slice(0, 3); // ensure 3
+        }
+
+        function drawLevelUp() {
+            ctx.fillStyle = 'white';
+            ctx.font = '32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Level Up!', CX, 150);
+            ctx.font = '20px Arial';
+            let uy = 200;
+            upgrades.forEach((up, idx) => {
+                ctx.fillText(`${idx + 1}: ${up.text}`, CX, uy);
+                uy += 40;
+            });
+            ctx.fillText('Press 1-3 to choose', CX, uy + 20);
+            ctx.textAlign = 'left';
+        }
+
+        function applyUpgrade(up) {
+            switch (up.type) {
+                case 'unlock':
+                    player.unlocks.add(up.id);
+                    player.attacks[up.id].unlocked = true;
+                    break;
+                case 'buff':
+                    let a = player.attacks[up.id];
+                    if (up.text.includes('DMG')) a.damage += 10;
+                    else a.cd = Math.max(50, a.cd - 50);
+                    break;
+                case 'stat':
+                    if (up.what === 'atk') player.atk += up.val;
+                    if (up.what === 'def') player.def += up.val;
+                    if (up.what === 'pl' && player.pl < 16) player.pl += up.val;
+                    break;
+                case 'shield':
+                    if (up.what === 'yield') player.shieldYield = Math.max(0.1, player.shieldYield + up.val);
+                    else {
+                        player.omniShield = true;
+                        player.shieldRadius += 20;
+                    }
+                    break;
+            }
         }
 
         function spawnWave() {
             enemies = [];
-            let num = Math.min(1 + Math.floor((player.level - 1) / 3), 6);
-            let isBossWave = currentWave % 5 === 0;
-            if (isBossWave) num = Math.max(1, num - 1);
-            const types = ['fire', 'ice', 'shadow', 'storm', 'beast'];
-            const colors = { fire: 'red', ice: 'cyan', shadow: 'purple', storm: 'yellow', beast: 'green' };
+            let num = Math.min(1 + Math.floor((wave - 1) / 3), 6);
             for (let i = 0; i < num; i++) {
-                let side = Math.random() * 4 | 0;
-                let x = side % 2 === 0 ? (Math.random() * GAME_WIDTH) : (side < 2 ? 0 : GAME_WIDTH);
-                let y = side % 2 === 1 ? (Math.random() * GAME_HEIGHT) : (side < 2 ? 0 : GAME_HEIGHT);
-                let type = types[Math.random() * types.length | 0];
-                let e = new Enemy(x, y, colors[type], player.level, type);
-                enemies.push(e);
+                let type = ['Fire', 'Ice', 'Shadow', 'Storm', 'Beast'][Math.floor(Math.random() * 5)];
+                let pl = Math.floor(wave / 2);
+                enemies.push(new Enemy(type, pl));
             }
-            if (isBossWave) {
-                let bossSide = Math.random() * 4 | 0;
-                let bx = bossSide % 2 === 0 ? (Math.random() * GAME_WIDTH) : (bossSide < 2 ? 0 : GAME_WIDTH);
-                let by = bossSide % 2 === 1 ? (Math.random() * GAME_HEIGHT) : (bossSide < 2 ? 0 : GAME_HEIGHT);
-                let boss = new Enemy(bx, by, 'darkred', player.level, 'boss');
-                boss.isBoss = true;
-                boss.health *= 2;
-                boss.maxHealth *= 2;
-                boss.pl = Math.min(player.pl + 1, 16);
-                boss.size = 15;
-                enemies.push(boss);
+            if (wave % 5 === 0) {
+                enemies.push(new Enemy('Boss', player.pl + 1));
             }
         }
 
-        // Globals
-        let player = new Player();
-        let enemies = [];
-        let projectiles = [];
-        let particles = [];
-        let keys = {};
-        let mouse = { x: 0, y: 0 };
-        let gameState = 'menu';
-        let currentWave = 1;
-        let upgradePool = [];
-        let screenShake = 0;
-        let upgradeSelected = -1;
+        function checkLevelUp() {
+            while (player.xp >= player.nextLevelXp) {
+                player.xp -= player.nextLevelXp;
+                player.nextLevelXp = Math.floor(player.nextLevelXp * 1.5);
+                player.level++;
+                if (player.level % 4 === 0 && player.pl < 16) player.pl++;
+                if (player.pl === 16) player.maxHealth += 50; // god mode bonus
+                generateUpgrades();
+                gameState = 'levelup';
+                return;
+            }
+        }
+
+        function checkWaveClear() {
+            if (enemies.length === 0 && gameState === 'playing') {
+                player.xp += 100 * wave; // bonus
+                wave++;
+                checkLevelUp();
+                if (gameState !== 'levelup') spawnWave();
+            }
+        }
+
+        function loadGame() {
+            let save = localStorage.getItem('alternateSave');
+            if (save) {
+                let data = JSON.parse(save);
+                player.health = data.health || 100;
+                player.mana = data.mana || 100;
+                player.pl = Math.min(data.pl || 1, 16);
+                player.atk = data.atk || 20;
+                player.def = data.def || 10;
+                player.level = data.level || 1;
+                player.xp = data.xp || 0;
+                player.nextLevelXp = data.nextLevelXp || 100;
+                player.unlocks = new Set(data.unlocks || ['1']);
+                player.shieldYield = data.shieldYield || 1.0;
+                player.omniShield = data.omniShield || false;
+                player.shieldRadius = 40 + (player.omniShield ? 20 : 0);
+                // reload attacks
+                for (let id in player.attacks) {
+                    player.attacks[id].unlocked = player.unlocks.has(id);
+                }
+                wave = data.wave || 1;
+                kills = data.kills || 0;
+                spawnWave();
+                gameState = 'playing';
+            }
+        }
+
+        function saveGame() {
+            let data = {
+                health: player.health,
+                mana: player.mana,
+                pl: player.pl,
+                atk: player.atk,
+                def: player.def,
+                level: player.level,
+                xp: player.xp,
+                nextLevelXp: player.nextLevelXp,
+                unlocks: Array.from(player.unlocks),
+                shieldYield: player.shieldYield,
+                omniShield: player.omniShield,
+                wave: wave,
+                kills: kills
+            };
+            localStorage.setItem('alternateSave', JSON.stringify(data));
+        }
 
         // Events
-        window.addEventListener('keydown', e => {
-            keys[e.code] = true;
-            if (gameState === 'playing') {
-                if (e.code === 'Space') player.shieldActive = true;
-                if (e.code === 'Comma') player.cycleAbility();
-                if (e.code >= 'Digit1' && e.code <= 'Digit9' || ['KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM'].includes(e.code)) {
-                    player.selectAbility(e.code);
-                }
+        document.addEventListener('keydown', e => {
+            keys[e.key] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                if (gameState === 'playing') player.shielding = true;
             }
-            if (e.code === 'KeyR' && gameState === 'gameOver') {
-                localStorage.removeItem('alternateSave');
-                location.reload();
+            if (e.key === ',') {
+                let ids = Object.keys(player.attacks).map(Number).sort((a,b) => a - b).filter(id => player.attacks[id].unlocked);
+                let currIdx = ids.indexOf(player.selectedAttack);
+                player.selectedAttack = ids[(currIdx + 1) % ids.length] || 1;
             }
-        });
-        window.addEventListener('keyup', e => {
-            keys[e.code] = false;
-            if (e.code === 'Space') player.shieldActive = false;
-        });
-        canvas.addEventListener('mousemove', e => {
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = e.clientX - rect.left;
-            mouse.y = e.clientY - rect.top;
-        });
-        canvas.addEventListener('click', e => {
-            if (gameState === 'playing' && !player.shieldActive) {
-                player.fire(new Vector(mouse.x, mouse.y));
-            } else if (gameState === 'levelUp') {
-                // Select upgrade
-                const btnWidth = 200, btnHeight = 40, startX = 300, startY = 200;
-                upgradeSelected = Math.floor((mouse.y - startY) / (btnHeight + 10));
-                if (upgradeSelected >= 0 && upgradeSelected < 3) {
-                    upgradePool[upgradeSelected].apply(player);
-                    player.save();
+            if (e.key >= '1' && e.key <= '9') player.selectedAttack = parseInt(e.key);
+            if (e.key.toLowerCase() === 'c') player.selectedAttack = 10;
+            if (e.key.toLowerCase() === 'v') player.selectedAttack = 11;
+            if (e.key.toLowerCase() === 'b') player.selectedAttack = 12;
+            if (e.key.toLowerCase() === 'n') player.selectedAttack = 13;
+            if (e.key.toLowerCase() === 'm') player.selectedAttack = 14;
+            if (gameState === 'menu') {
+                if (e.key.toLowerCase() === 'p') {
+                    player = new Player();
+                    wave = 1;
+                    kills = 0;
+                    spawnWave();
                     gameState = 'playing';
+                } else if (e.key.toLowerCase() === 'a') {
+                    gameState = 'attributes';
                 }
-            } else if (gameState === 'menu') {
-                const btnY = 300, btnH = 50;
-                if (mouse.y > btnY && mouse.y < btnY + btnH) {
-                    if (mouse.x < 400) { // Play
-                        player.load();
-                        gameState = 'playing';
-                        if (enemies.length === 0) spawnWave();
-                    } else if (mouse.x < 600) { // Attributes
-                        // Toggle view? Simple console for now
-                        console.log('Attributes:', { pl: player.pl, level: player.level, atk: player.atk, def: player.def, unlocks: player.unlocks });
-                    } else { // Restart wipe
-                        if (confirm('Wipe save?')) localStorage.removeItem('alternateSave');
-                        player = new Player();
-                        gameState = 'playing';
+            } else if (gameState === 'attributes' && e.key === 'Escape') {
+                gameState = 'menu';
+            } else if (gameState === 'gameover' && e.key.toLowerCase() === 'r') {
+                localStorage.removeItem('alternateSave');
+                gameState = 'menu';
+            } else if (gameState === 'levelup' && e.key >= '1' && e.key <= '3') {
+                let choice = parseInt(e.key) - 1;
+                if (upgrades[choice]) {
+                    applyUpgrade(upgrades[choice]);
+                    checkLevelUp(); // if more levels
+                    if (gameState !== 'levelup') {
                         spawnWave();
                     }
                 }
             }
         });
-
-        function renderUI(ctx) {
-            // Stats top left
-            ctx.fillStyle = 'white';
-            ctx.font = '16px Arial';
-            ctx.fillText(`Health: ${Math.floor(player.health)}/${player.maxHealth}`, 10, 20);
-            ctx.fillText(`Mana: ${Math.floor(player.mana)}/${player.maxMana}`, 10, 40);
-            ctx.fillText(`PL: ${player.pl}/16`, 10, 60);
-            ctx.fillText(`ATK: ${player.atk} DEF: ${player.def}`, 10, 80);
-            ctx.fillText(`Level: ${player.level} XP: ${player.xp}/${player.xpToNext}`, 10, 100);
-            ctx.fillText(`Wave: ${currentWave}`, 10, 120);
-            // Spells right
-            ctx.fillText('Spells:', 650, 20);
-            player.unlockedAbilities.forEach((a, i) => {
-                let y = 40 + i * 20;
-                ctx.fillStyle = i === player.selectedAbility ? 'lime' : 'gray';
-                let cdText = a.cd > 0 ? ` [${(a.cd).toFixed(1)}s]` : '';
-                ctx.fillText(`${a.name}${cdText}`, 650, y);
-            });
-            // Controls bottom
-            ctx.fillStyle = 'white';
-            ctx.fillText('WASD/Arrows: Move | Mouse: Aim/Fire | , : Cycle | SPACE: Shield | 1-9/C-V-B-N-M: Select', 10, 580);
-        }
-
-        function renderMenu(ctx) {
-            ctx.fillStyle = 'white';
-            ctx.font = '32px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText("Alternate's Magical Evolution", GAME_WIDTH / 2, 150);
-            ctx.font = '20px Arial';
-            ctx.textAlign = 'left';
-            const btnY = 300;
-            ['Play', 'Attributes', 'Restart (Wipe)'].forEach((btn, i) => {
-                let x = 200 + i * 200;
-                ctx.strokeStyle = 'white';
-                ctx.strokeRect(x, btnY, 150, 50);
-                ctx.fillText(btn, x + 10, btnY + 30);
-            });
-            ctx.textAlign = 'left';
-        }
-
-        function renderLevelUp(ctx) {
-            ctx.fillStyle = 'rgba(0,0,0,0.8)';
-            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-            ctx.fillStyle = 'white';
-            ctx.font = '24px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Level Up! Choose Upgrade', GAME_WIDTH / 2, 150);
-            const btnWidth = 250, btnHeight = 50, startX = (GAME_WIDTH - btnWidth) / 2, startY = 200;
-            upgradePool.forEach((up, i) => {
-                let y = startY + i * (btnHeight + 10);
-                ctx.strokeStyle = i === upgradeSelected ? 'lime' : 'white';
-                ctx.strokeRect(startX, y, btnWidth, btnHeight);
-                ctx.fillStyle = i === upgradeSelected ? 'lime' : 'white';
-                ctx.fillText(up.name, startX + 10, y + 30);
-            });
-            ctx.textAlign = 'left';
-        }
-
-        function renderGameOver(ctx) {
-            ctx.fillStyle = 'rgba(0,0,0,0.8)';
-            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-            ctx.fillStyle = 'red';
-            ctx.font = '32px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Game Over', GAME_WIDTH / 2, 250);
-            ctx.font = '20px Arial';
-            ctx.fillText(`Final Level: ${player.level} PL: ${player.pl}`, GAME_WIDTH / 2, 300);
-            ctx.fillText('R to Restart (Wipes Save)', GAME_WIDTH / 2, 350);
-            ctx.textAlign = 'left';
-        }
-
-        // Load on start
-        player.load();
-
-        let lastTime = 0;
-        function gameLoop(time) {
-            let dt = (time - lastTime) / 1000;
-            lastTime = time;
-            dt = Math.min(dt, 1 / 30); // cap
-
-            // Shake
-            if (screenShake > 0) {
-                ctx.save();
-                ctx.translate(Math.random() * screenShake * 10 - screenShake * 5, Math.random() * screenShake * 10 - screenShake * 5);
-                screenShake -= dt;
+        document.addEventListener('keyup', e => {
+            keys[e.key] = false;
+            if (e.key === ' ') {
+                if (gameState === 'playing') player.shielding = false;
             }
+        });
+        canvas.addEventListener('mousemove', e => {
+            let rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+        canvas.addEventListener('mousedown', e => {
+            mouse.down = true;
+            if (gameState === 'playing') player.fire();
+        });
+        canvas.addEventListener('mouseup', () => mouse.down = false);
 
-            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-            if (gameState === 'playing') {
+        // Init
+        player = new Player();
+        loadGame();
+        function loop() {
+            let dt = 16;
+            gameTime += dt;
+            ctx.clearRect(0, 0, CW, CH);
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, CW, CH);
+            if (gameState === 'menu') {
+                drawMenu();
+            } else if (gameState === 'attributes') {
+                drawAttributes();
+            } else if (gameState === 'levelup') {
+                drawLevelUp();
+            } else if (gameState === 'playing') {
                 player.update(dt);
                 enemies.forEach(e => e.update(dt));
-                projectiles.forEach(p => p.update(dt));
-                particles.forEach(p => p.update(dt));
-                // Clean
-                projectiles = projectiles.filter(p => p.life > 0 && p.pos.mag() < 2000);
-                particles = particles.filter(p => p.life > 0);
-                // Render
-                enemies.forEach(e => e.render(ctx));
-                player.render(ctx);
-                projectiles.forEach(p => p.render(ctx));
-                particles.forEach(p => p.render(ctx));
-                // Render beams etc. here if needed, but for simplicity, effects in update
-                renderUI(ctx);
-            } else if (gameState === 'menu') {
-                renderMenu(ctx);
-            } else if (gameState === 'levelUp') {
-                enemies.forEach(e => e.update(dt));
-                player.update(dt);
-                projectiles.forEach(p => p.update(dt));
-                particles.forEach(p => p.update(dt));
-                enemies.forEach(e => e.render(ctx));
-                player.render(ctx);
-                projectiles.forEach(p => p.render(ctx));
-                particles.forEach(p => p.render(ctx));
-                renderLevelUp(ctx);
-                renderUI(ctx);
-            } else if (gameState === 'gameOver') {
-                renderGameOver(ctx);
+                updateProjectiles();
+                updateBeams();
+                updateParticles(dt);
+                if (player.health <= 0) {
+                    gameState = 'gameover';
+                    localStorage.removeItem('alternateSave');
+                }
+                checkWaveClear();
+                player.draw(ctx, gameTime);
+                enemies.forEach(e => e.draw(ctx, gameTime));
+                particles.forEach(p => p.draw(ctx));
+                drawUI();
+                // aim line
+                ctx.strokeStyle = 'gray';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(player.x, player.y);
+                ctx.lineTo(mouse.x, mouse.y);
+                ctx.stroke();
+            } else if (gameState === 'gameover') {
+                ctx.fillStyle = 'white';
+                ctx.font = '32px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', CX, CY);
+                ctx.font = '20px Arial';
+                ctx.fillText(`Survived ${wave - 1} waves, ${kills} kills`, CX, CY + 40);
+                ctx.fillText('Press R to Restart', CX, CY + 80);
+                ctx.textAlign = 'left';
             }
-
-            if (screenShake > 0) ctx.restore();
-
-            requestAnimationFrame(gameLoop);
+            if (gameState === 'playing') saveGame();
+            requestAnimationFrame(loop);
         }
-
-        if (gameState === 'playing') spawnWave();
-        requestAnimationFrame(gameLoop);
+        loop();
     </script>
 </body>
 </html>
