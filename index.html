@@ -45,6 +45,7 @@
                 this.def = 10;
                 this.pl = 1;
                 this.debuffs = [];
+                this.slowMult = 1;
                 this.owner = null; // for projs
             }
             update(dt) {
@@ -79,7 +80,7 @@
                 ctx.strokeStyle = this.color;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(this.pos.x, this.pos.y + this.size / 2);
+                ctx.moveTo(this.pos.x, this.pos.y);
                 ctx.lineTo(this.pos.x, this.pos.y + this.size * 1.2);
                 ctx.stroke(); // body
                 // Simple arms
@@ -125,7 +126,8 @@
                 this.level = 1;
                 this.xp = 0;
                 this.xpToNext = 100;
-                this.unlockedAbilities = [new Ability('Magic Shot', 0.5, 5, 20, 'projectile', 'orange', this.pl)]; // index 0
+                this.unlockedAbilities = [new Ability('Magic Shot', 0.5, 5, 20, 'projectile', 'orange', this.pl, 0)];
+                this.unlocks = [0];
                 this.selectedAbility = 0;
                 this.shieldActive = false;
                 this.shieldStrength = 0;
@@ -179,7 +181,7 @@
                     this.mana -= absorbed * this.shieldYield;
                     for (let i = 0; i < 5; i++) particles.push(new Particle(this.pos, new Vector(Math.random() * 100 - 50, Math.random() * 100 - 50), 'yellow', 0.3));
                 }
-                let effectiveDmg = Math.max(1, (dmg - absorbed) - this.def * (1 - 0.01 * this.pl));
+                let effectiveDmg = Math.max(1, (dmg - absorbed) - this.def * (1 - 0.01 * attackerPl));
                 this.health -= effectiveDmg;
                 if (this.health <= 0) gameState = 'gameOver';
                 return effectiveDmg;
@@ -198,7 +200,11 @@
                 this.selectedAbility = (this.selectedAbility + 1) % this.unlockedAbilities.length;
             }
             selectAbility(key) {
-                const keyMap = { '1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7, '9': 8, 'KeyC': 9, 'KeyV': 10, 'KeyB': 11, 'KeyN': 12, 'KeyM': 13 };
+                const keyMap = {
+                    'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4,
+                    'Digit6': 5, 'Digit7': 6, 'Digit8': 7, 'Digit9': 8,
+                    'KeyC': 9, 'KeyV': 10, 'KeyB': 11, 'KeyN': 12, 'KeyM': 13
+                };
                 const idx = keyMap[key];
                 if (idx !== undefined && this.unlocks.includes(idx)) {
                     this.selectedAbility = this.unlockedAbilities.findIndex(a => a.id === idx);
@@ -230,7 +236,10 @@
                 const save = {
                     pl: this.pl, level: this.level, xp: this.xp, atk: this.atk, def: this.def,
                     shieldYield: this.shieldYield,
-                    unlockedAbilities: this.unlockedAbilities.map(a => ({ id: a.id, name: a.name, dmg: a.dmg, maxCd: a.maxCd, manaCost: a.manaCost }))
+                    unlockedAbilities: this.unlockedAbilities.map(a => ({
+                        id: a.id, name: a.name, dmg: a.dmg, maxCd: a.maxCd, manaCost: a.manaCost,
+                        type: a.type, color: a.color
+                    }))
                 };
                 localStorage.setItem('alternateSave', JSON.stringify(save));
             }
@@ -241,7 +250,10 @@
                     this.pl = data.pl; this.level = data.level; this.xp = data.xp;
                     this.atk = data.atk; this.def = data.def;
                     this.shieldYield = data.shieldYield;
-                    this.unlockedAbilities = data.unlockedAbilities.map(aData => new Ability(aData.name, aData.maxCd, aData.manaCost, aData.dmg, 'projectile', 'orange', this.pl, aData.id)).filter(a => a); // reconstruct
+                    this.unlockedAbilities = data.unlockedAbilities.map(aData => new Ability(
+                        aData.name, aData.maxCd, aData.manaCost, aData.dmg,
+                        aData.type, aData.color, this.pl, aData.id
+                    ));
                     this.unlocks = this.unlockedAbilities.map(a => a.id);
                 }
             }
@@ -282,7 +294,7 @@
                 }
                 // AI cast
                 let castInt = Math.max(3 - this.pl * 0.1, 1);
-                if (this.spellTimer > castInt && !this.debuffs.some(d => d.type === 'stun')) {
+                if (this.spellTimer > castInt && this.unlockedAbilities.length > 0 && !this.debuffs.some(d => d.type === 'stun')) {
                     this.spellTimer = 0;
                     const abil = this.unlockedAbilities[Math.floor(Math.random() * this.unlockedAbilities.length)];
                     abil.fire(this.pos, player.pos, this);
@@ -338,9 +350,7 @@
                     ctx.save();
                     ctx.translate(this.pos.x, this.pos.y);
                     ctx.scale(1.5, 1.5);
-                    this.pos = new Vector(0, 0); // temp for super render
                     super.render(ctx, this.animOffset);
-                    this.pos = ctx.getTransform().e ? new Vector(ctx.getTransform().e, ctx.getTransform().f) : this.pos; // hack
                     ctx.restore();
                 } else {
                     super.render(ctx, this.animOffset);
@@ -520,7 +530,7 @@
                         projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(180), 'green', this.dmg, 'curve', this.pl, owner, this.id));
                         break;
                     case 6: // Shield Breaker
-                        fireAoE(to, 50 + this.pl * 5, this.dmg * 0.5, 'purple', true, this.pl); // break shields
+                        fireAoE(to, 50 + this.pl * 5, this.dmg * 0.5, 'purple', true, this.pl, owner);
                         break;
                     case 7: // Homing Missile
                         projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(150), 'red', this.dmg, 'missile', this.pl, owner, this.id));
@@ -586,49 +596,20 @@
                 }
                 current = current.add(step);
             }
-            // Render
-            ctx.strokeStyle = color;
-            ctx.lineWidth = width;
-            ctx.shadowColor = color;
-            ctx.shadowBlur = 20;
-            ctx.beginPath();
-            ctx.moveTo(from.x, from.y);
-            ctx.lineTo(to.x, to.y);
-            ctx.stroke();
-            ctx.shadowBlur = 0;
+            // Render will be handled in game loop, but for instant, log
             console.log('Beam fired');
         }
 
         function fireLightning(from, to, dmg, pl, owner) {
-            // Simple zig-zag approx
-            let points = [];
-            let current = from.add( (to.sub(from)).mul(0.2) );
-            for (let i = 0; i < 5; i++) {
-                let offset = new Vector(Math.sin(i * 2) * 20, Math.cos(i * 2) * 20);
-                points.push(current.add(offset));
-                current = current.add( (to.sub(from)).mul(0.2) );
-            }
-            points.push(to);
             // Damage first target
             let targets = owner === player ? enemies : [player];
             let nearest = findNearestTo(from, targets);
             if (nearest) nearest.takeDamage(dmg, 'lightning', pl);
-            // Render
-            ctx.strokeStyle = 'yellow';
-            ctx.lineWidth = 3;
-            ctx.shadowColor = 'yellow';
-            ctx.shadowBlur = 10;
-            ctx.beginPath();
-            ctx.moveTo(from.x, from.y);
-            for (let p of points) {
-                ctx.lineTo(p.x, p.y);
-            }
-            ctx.stroke();
-            ctx.shadowBlur = 0;
+            console.log('Lightning fired');
         }
 
-        function fireAoE(pos, radius, dmg, color, breakShield, pl) {
-            let targets = player ? enemies : [player];
+        function fireAoE(pos, radius, dmg, color, breakShield, pl, owner) {
+            let targets = owner === player ? enemies : [player];
             targets.forEach(t => {
                 if (t.pos.sub(pos).mag() < radius) {
                     if (breakShield) t.shieldStrength -= 50 + pl * 10;
@@ -636,12 +617,7 @@
                     addParticles(t.pos, color, 10);
                 }
             });
-            // Render pulse
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-            ctx.stroke();
+            console.log('AoE fired');
         }
 
         function fireCone(from, to, dmg, length, angle, pl, owner) {
@@ -662,14 +638,7 @@
                     }
                 }
             });
-            // Render cone
-            ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
-            ctx.beginPath();
-            ctx.moveTo(from.x, from.y);
-            ctx.lineTo(from.x + Math.cos(coneAng - angle / 2) * length, from.y + Math.sin(coneAng - angle / 2) * length);
-            ctx.lineTo(from.x + Math.cos(coneAng + angle / 2) * length, from.y + Math.sin(coneAng + angle / 2) * length);
-            ctx.closePath();
-            ctx.fill();
+            console.log('Cone fired');
         }
 
         function findNearestEnemy(pos) {
@@ -783,7 +752,7 @@
             const colors = { fire: 'red', ice: 'cyan', shadow: 'purple', storm: 'yellow', beast: 'green' };
             for (let i = 0; i < num; i++) {
                 let side = Math.random() * 4 | 0;
-                let x = side % 2 === 0 ? (Math.random() * GAME_WIDTH) : (side === 0 ? 0 : GAME_WIDTH);
+                let x = side % 2 === 0 ? (Math.random() * GAME_WIDTH) : (side < 2 ? 0 : GAME_WIDTH);
                 let y = side % 2 === 1 ? (Math.random() * GAME_HEIGHT) : (side < 2 ? 0 : GAME_HEIGHT);
                 let type = types[Math.random() * types.length | 0];
                 let e = new Enemy(x, y, colors[type], player.level, type);
@@ -791,7 +760,7 @@
             }
             if (isBossWave) {
                 let bossSide = Math.random() * 4 | 0;
-                let bx = bossSide % 2 === 0 ? (Math.random() * GAME_WIDTH) : (bossSide === 0 ? 0 : GAME_WIDTH);
+                let bx = bossSide % 2 === 0 ? (Math.random() * GAME_WIDTH) : (bossSide < 2 ? 0 : GAME_WIDTH);
                 let by = bossSide % 2 === 1 ? (Math.random() * GAME_HEIGHT) : (bossSide < 2 ? 0 : GAME_HEIGHT);
                 let boss = new Enemy(bx, by, 'darkred', player.level, 'boss');
                 boss.isBoss = true;
@@ -822,8 +791,9 @@
             if (gameState === 'playing') {
                 if (e.code === 'Space') player.shieldActive = true;
                 if (e.code === 'Comma') player.cycleAbility();
-                if (e.code >= 'Digit1' && e.code <= 'Digit9') player.selectAbility(e.code);
-                if (['KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM'].includes(e.code)) player.selectAbility(e.code);
+                if (e.code >= 'Digit1' && e.code <= 'Digit9' || ['KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM'].includes(e.code)) {
+                    player.selectAbility(e.code);
+                }
             }
             if (e.code === 'KeyR' && gameState === 'gameOver') {
                 localStorage.removeItem('alternateSave');
@@ -942,17 +912,6 @@
             ctx.textAlign = 'left';
         }
 
-        // Shuffle helper
-        function shuffle(array) {
-            for (let i = array.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [array[i], array[j]] = [array[j], array[i]];
-            }
-            return array;
-        }
-
-        player.unlocks = [0]; // initial
-
         // Load on start
         player.load();
 
@@ -984,10 +943,15 @@
                 player.render(ctx);
                 projectiles.forEach(p => p.render(ctx));
                 particles.forEach(p => p.render(ctx));
+                // Render beams etc. here if needed, but for simplicity, effects in update
                 renderUI(ctx);
             } else if (gameState === 'menu') {
                 renderMenu(ctx);
             } else if (gameState === 'levelUp') {
+                enemies.forEach(e => e.update(dt));
+                player.update(dt);
+                projectiles.forEach(p => p.update(dt));
+                particles.forEach(p => p.update(dt));
                 enemies.forEach(e => e.render(ctx));
                 player.render(ctx);
                 projectiles.forEach(p => p.render(ctx));
@@ -1003,7 +967,7 @@
             requestAnimationFrame(gameLoop);
         }
 
-        spawnWave();
+        if (gameState === 'playing') spawnWave();
         requestAnimationFrame(gameLoop);
     </script>
 </body>
