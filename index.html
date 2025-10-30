@@ -25,6 +25,7 @@
             top: 10px;
             left: 10px;
             z-index: 10;
+            display: none;
         }
         #spells {
             position: absolute;
@@ -34,7 +35,9 @@
             background: rgba(0,0,0,0.5);
             padding: 10px;
             border: 1px solid #fff;
-            width: 150px;
+            width: 200px;
+            display: none;
+            font-size: 12px;
         }
         #controls {
             position: absolute;
@@ -42,6 +45,7 @@
             left: 10px;
             font-size: 12px;
             opacity: 0.7;
+            display: none;
         }
         #levelUp {
             position: absolute;
@@ -53,6 +57,7 @@
             border: 1px solid #fff;
             display: none;
             text-align: center;
+            max-width: 300px;
         }
         button {
             margin: 5px;
@@ -61,9 +66,28 @@
             color: #fff;
             border: 1px solid #fff;
             cursor: pointer;
+            display: block;
+            width: 80%;
         }
         button:hover {
             background: #555;
+        }
+        #mainMenu, #attributes {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border: 1px solid #fff;
+            text-align: center;
+            display: none;
+        }
+        #mainMenu {
+            display: block;
+        }
+        ul {
+            text-align: left;
         }
     </style>
 </head>
@@ -72,25 +96,42 @@
     <div id="ui">
         <div>Health: <span id="health">100</span>/100</div>
         <div>Mana: <span id="mana">100</span>/100</div>
+        <div>PL: <span id="pl">1</span> | ATK: <span id="atk">20</span> | DEF: <span id="def">10</span></div>
         <div>Level: <span id="level">1</span></div>
         <div>XP: <span id="xp">0</span>/<span id="nextLevel">100</span></div>
     </div>
     <div id="spells">
-        <h3>Spells</h3>
-        <div>Mouse Click: Fireball (CD: <span id="cdFire">0</span>s)</div>
-        <div>A: Beam (CD: <span id="cdBeam">0</span>s)</div>
-        <div>S: Ice Shard (CD: <span id="cdIce">0</span>s)</div>
-        <div>D: Lightning (CD: <span id="cdLightning">0</span>s)</div>
+        <h3>Spells (1-9)</h3>
+        <div>1: Single-Shot (CD: <span id="cd1">0</span>s)</div>
+        <div>2: Tri-Shot (CD: <span id="cd2">0</span>s)</div>
+        <div>3: Beam (CD: <span id="cd3">0</span>s)</div>
+        <div>4: Ice Shard (CD: <span id="cd4">0</span>s)</div>
+        <div>5: Lightning (CD: <span id="cd5">0</span>s)</div>
+        <div>6: Curve-Shot (CD: <span id="cd6">0</span>s)</div>
+        <div>7: Shield Breaker (CD: <span id="cd7">0</span>s)</div>
+        <div>8: Homing Missile (CD: <span id="cd8">0</span>s)</div>
+        <div>9: Force Wave (CD: <span id="cd9">0</span>s)</div>
     </div>
     <div id="controls">
-        Movement: WASD or Arrow Keys. Aim with mouse.
+        Movement: WASD/Arrows. Aim: Mouse. Spells: 1-9. Shield: Hold SPACE. R: Restart.
+    </div>
+    <div id="mainMenu">
+        <h1>Alternate's Magical Evolution</h1>
+        <button onclick="startGame()">Play</button>
+        <br><br>
+        <button onclick="showAttributes()">Attributes</button>
+        <br><br>
+        <p>Inspired by Zeruel82Mk2's Stickworld!</p>
+    </div>
+    <div id="attributes">
+        <h2>Attributes</h2>
+        <div id="stats"></div>
+        <br>
+        <button onclick="backToMenu()">Back to Menu</button>
     </div>
     <div id="levelUp">
-        <h2>Level Up! Choose an upgrade:</h2>
-        <button onclick="upgrade('fire')">Fireball + Damage</button>
-        <button onclick="upgrade('ice')">Ice Shard + Slow</button>
-        <button onclick="upgrade('lightning')">Lightning + Chain</button>
-        <button onclick="upgrade('beam')">Beam + Pierce</button>
+        <h2>Level Up! Choose Upgrade:</h2>
+        <div id="upgradeOptions"></div>
         <p id="upgradeDesc"></p>
     </div>
 
@@ -99,40 +140,47 @@
         const ctx = canvas.getContext('2d');
         const uiHealth = document.getElementById('health');
         const uiMana = document.getElementById('mana');
+        const uiPL = document.getElementById('pl');
+        const uiATK = document.getElementById('atk');
+        const uiDEF = document.getElementById('def');
         const uiLevel = document.getElementById('level');
         const uiXP = document.getElementById('xp');
         const uiNext = document.getElementById('nextLevel');
-        const cdFire = document.getElementById('cdFire');
-        const cdBeam = document.getElementById('cdBeam');
-        const cdIce = document.getElementById('cdIce');
-        const cdLightning = document.getElementById('cdLightning');
+        const cds = ['cd1','cd2','cd3','cd4','cd5','cd6','cd7','cd8','cd9'].map(id => document.getElementById(id));
         const levelUpDiv = document.getElementById('levelUp');
+        const upgradeOptions = document.getElementById('upgradeOptions');
+        const mainMenu = document.getElementById('mainMenu');
+        const attributes = document.getElementById('attributes');
+        const statsDiv = document.getElementById('stats');
 
         // Game state
         let gameState = {
+            currentScreen: 'menu',
             player: {
-                x: 400,
-                y: 300,
-                width: 20,
-                height: 20,
-                health: 100,
-                maxHealth: 100,
-                mana: 100,
-                maxMana: 100,
+                x: 400, y: 300, width: 20, height: 20,
+                health: 100, maxHealth: 100,
+                mana: 100, maxMana: 100,
                 speed: 3,
-                level: 1,
-                xp: 0,
-                xpToNext: 100,
+                level: 1, xp: 0, xpToNext: 100,
+                pl: 1, atk: 20, def: 10,
                 spells: {
-                    fire: { damage: 20, cost: 20, cooldown: 0, maxCd: 500 },
-                    beam: { damage: 30, cost: 30, cooldown: 0, maxCd: 1500 },
-                    ice: { damage: 15, cost: 15, cooldown: 0, maxCd: 800 },
-                    lightning: { damage: 25, cost: 25, cooldown: 0, maxCd: 1000 }
-                }
+                    1: { name: 'Single-Shot', damage: 20, cost: 20, cooldown: 0, maxCd: 500, type: 'projectile' },
+                    2: { name: 'Tri-Shot', damage: 15, cost: 25, cooldown: 0, maxCd: 700, type: 'multi' },
+                    3: { name: 'Beam', damage: 30, cost: 30, cooldown: 0, maxCd: 1500, type: 'beam' },
+                    4: { name: 'Ice Shard', damage: 15, cost: 15, cooldown: 0, maxCd: 800, type: 'ice' },
+                    5: { name: 'Lightning', damage: 25, cost: 25, cooldown: 0, maxCd: 1000, type: 'chain' },
+                    6: { name: 'Curve-Shot', damage: 25, cost: 25, cooldown: 0, maxCd: 900, type: 'homing' },
+                    7: { name: 'Shield Breaker', damage: 0, cost: 40, cooldown: 0, maxCd: 2000, type: 'aoe_break' },
+                    8: { name: 'Homing Missile', damage: 35, cost: 35, cooldown: 0, maxCd: 1200, type: 'homing_missile' },
+                    9: { name: 'Force Wave', damage: 20, cost: 30, cooldown: 0, maxCd: 1100, type: 'wave' }
+                },
+                shield: { active: false, strength: 100, absorbed: 0, yield: 1.0, omni: false }, // yield: mana cost factor
+                usedUpgrades: new Set()
             },
             enemies: [],
+            bosses: [],
             projectiles: [],
-            beams: [], // For beam spells
+            beams: [],
             enemyProjectiles: [],
             particles: [],
             keys: {},
@@ -140,60 +188,181 @@
             mouseY: 0,
             lastTime: 0,
             gameOver: false,
-            paused: false
+            paused: false,
+            upgradePool: [
+                // Attacks
+                {id: 'fire_dmg', name: 'Single-Shot + Damage', apply: (p) => p.spells[1].damage += 10 },
+                {id: 'tri_dmg', name: 'Tri-Shot + Damage', apply: (p) => p.spells[2].damage += 8 },
+                {id: 'beam_dmg', name: 'Beam + Pierce', apply: (p) => p.spells[3].damage += 15 },
+                {id: 'ice_slow', name: 'Ice Shard + Slow', apply: (p) => p.spells[4].slow = (p.spells[4].slow || 0) + 0.5 },
+                {id: 'light_chain', name: 'Lightning + Chain', apply: (p) => p.spells[5].chainRange = (p.spells[5].chainRange || 50) + 10 },
+                {id: 'curve_acc', name: 'Curve-Shot + Accuracy', apply: (p) => p.spells[6].homingStrength += 0.2 },
+                {id: 'breaker_pow', name: 'Shield Breaker + Power', apply: (p) => p.spells[7].breakStrength += 20 },
+                {id: 'missile_dmg', name: 'Homing Missile + Damage', apply: (p) => p.spells[8].damage += 10 },
+                {id: 'wave_aoe', name: 'Force Wave + AoE', apply: (p) => p.spells[9].aoeRadius += 10 },
+                // Stats
+                {id: 'atk_up', name: 'ATK +5', apply: (p) => p.atk += 5 },
+                {id: 'def_up', name: 'DEF +5', apply: (p) => p.def += 5 },
+                {id: 'pl_up', name: 'PL +1', apply: (p) => p.pl += 1 },
+                {id: 'mana_regen', name: 'Mana Regen +10%', apply: (p) => p.manaRegen = (p.manaRegen || 20) * 1.1 },
+                // Shield
+                {id: 'shield_yield', name: 'Shield Better Yield', apply: (p) => p.shield.yield = Math.max(0.5, p.shield.yield - 0.1) },
+                {id: 'omni_shield', name: 'Omni-Shield', apply: (p) => p.shield.omni = true },
+                {id: 'shield_str', name: 'Shield Strength +50', apply: (p) => p.shield.strength += 50 }
+            ]
         };
 
-        // Load save
+        // Draw refined stick figure
+        function drawStickFigure(x, y, color, hat = false, size = 1) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(size, size);
+            // Body
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, -10);
+            ctx.lineTo(0, 10);
+            ctx.stroke();
+            // Arms
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-8, 5);
+            ctx.moveTo(0, 0);
+            ctx.lineTo(8, 5);
+            ctx.stroke();
+            // Legs
+            ctx.beginPath();
+            ctx.moveTo(0, 10);
+            ctx.lineTo(-5, 20);
+            ctx.moveTo(0, 10);
+            ctx.lineTo(5, 20);
+            ctx.stroke();
+            // Head
+            ctx.beginPath();
+            ctx.arc(0, -15, 5, 0, Math.PI * 2);
+            ctx.stroke();
+            if (hat) {
+                ctx.fillStyle = '#f0f';
+                ctx.fillRect(-3, -25, 6, 10);
+            }
+            ctx.restore();
+        }
+
+        // Menu functions
+        window.startGame = function() {
+            gameState.currentScreen = 'game';
+            mainMenu.style.display = 'none';
+            document.getElementById('ui').style.display = 'block';
+            document.getElementById('spells').style.display = 'block';
+            document.getElementById('controls').style.display = 'block';
+            loadSave();
+            generateWave(gameState.player.level);
+            updateUI();
+            gameLoop(Date.now());
+        };
+
+        window.showAttributes = function() {
+            gameState.currentScreen = 'attributes';
+            mainMenu.style.display = 'none';
+            attributes.style.display = 'block';
+            let statsHtml = `
+                <ul>
+                    <li>Level: ${gameState.player.level}</li>
+                    <li>PL: ${gameState.player.pl}</li>
+                    <li>ATK: ${gameState.player.atk}</li>
+                    <li>DEF: ${gameState.player.def}</li>
+                    <li>Health: ${Math.floor(gameState.player.health)}/${gameState.player.maxHealth}</li>
+                    <li>Mana: ${Math.floor(gameState.player.mana)}/${gameState.player.maxMana}</li>
+                    <li>Speed: ${gameState.player.speed}</li>
+                    <li>XP: ${Math.floor(gameState.player.xp)}/${gameState.player.xpToNext}</li>
+                    <li>Shield Yield: ${gameState.player.shield.yield.toFixed(2)}</li>
+                    <li>Spells:</li><ul>
+            `;
+            for (let key in gameState.player.spells) {
+                const spell = gameState.player.spells[key];
+                statsHtml += `<li>${key}: ${spell.name} - Dmg ${spell.damage}, Cost ${spell.cost}, CD ${spell.maxCd/1000}s</li>`;
+            }
+            statsHtml += '</ul></ul>';
+            statsDiv.innerHTML = statsHtml;
+        };
+
+        window.backToMenu = function() {
+            gameState.currentScreen = 'menu';
+            attributes.style.display = 'none';
+            mainMenu.style.display = 'block';
+            if (gameState.gameOver) restart();
+        };
+
+        // Save/Load
         function loadSave() {
             const saved = localStorage.getItem('alternateSave');
             if (saved) {
                 const data = JSON.parse(saved);
                 gameState.player = { ...gameState.player, ...data.player };
-                generateEnemies(gameState.player.level);
+                gameState.player.usedUpgrades = new Set(data.player.usedUpgrades);
             }
         }
 
-        // Save game
         function saveGame() {
-            localStorage.setItem('alternateSave', JSON.stringify(gameState));
+            const saveData = { player: { ...gameState.player, usedUpgrades: [...gameState.player.usedUpgrades] } };
+            localStorage.setItem('alternateSave', JSON.stringify(saveData));
         }
 
-        // Generate unique enemies based on level with improved AI
-        function generateEnemies(level) {
+        // Generate wave or boss
+        function generateWave(level) {
             gameState.enemies = [];
-            const numEnemies = Math.min(1 + Math.floor(level / 2), 5);
-            for (let i = 0; i < numEnemies; i++) {
-                const enemy = {
-                    x: Math.random() * (canvas.width - 40) + 20,
-                    y: Math.random() * (canvas.height - 40) + 20,
-                    width: 20,
-                    height: 20,
-                    health: 50 + level * 20,
-                    maxHealth: 50 + level * 20,
-                    speed: 1 + level * 0.2,
-                    attackDamage: 10 + level * 5,
-                    color: `hsl(${level * 30}, 70%, 50%)`,
-                    type: ['Fire Mage', 'Ice Sorcerer', 'Shadow Warlock', 'Storm Caller', 'Arcane Beast'][level % 5],
-                    lastAttack: 0,
-                    attackCooldown: 2000 - level * 50,
-                    lastSpell: 0,
-                    spellCooldown: 3000 - level * 100,
-                    aiState: 'chase', // chase, dodge, cast
-                    dodgeDir: { x: 0, y: 0 }
+            gameState.bosses = [];
+            const isBoss = level % 5 === 0;
+            const num = isBoss ? 1 : Math.min(1 + Math.floor(level / 2), 5);
+            if (isBoss) {
+                const boss = {
+                    x: 400, y: 100, width: 30, height: 30,
+                    health: 500 + level * 100, maxHealth: 500 + level * 100,
+                    speed: 1.5 + level * 0.1,
+                    atk: 30 + level * 10, def: 20 + level * 5, pl: level,
+                    color: '#f00',
+                    type: 'Boss Magician',
+                    lastAttack: 0, attackCooldown: 1500,
+                    lastSpell: 0, spellCooldown: 2000,
+                    aiState: 'chase',
+                    dodgeDir: { x: 0, y: 0 },
+                    slow: 0,
+                    shield: { active: false, strength: 200 },
+                    special: 'shield_breaker' // e.g.
                 };
-                gameState.enemies.push(enemy);
+                gameState.bosses.push(boss);
+            } else {
+                for (let i = 0; i < num; i++) {
+                    const enemy = {
+                        x: Math.random() * (canvas.width - 40) + 20,
+                        y: Math.random() * (canvas.height - 40) + 20,
+                        width: 20, height: 20,
+                        health: 50 + level * 20, maxHealth: 50 + level * 20,
+                        speed: 1 + level * 0.2,
+                        atk: 10 + level * 5, def: 5 + level * 2, pl: Math.floor(level / 2),
+                        color: `hsl(${level * 30}, 70%, 50%)`,
+                        type: ['Fire Mage', 'Ice Sorcerer', 'Shadow Warlock', 'Storm Caller', 'Arcane Beast'][level % 5],
+                        lastAttack: 0, attackCooldown: 2000 - level * 50,
+                        lastSpell: 0, spellCooldown: 3000 - level * 100,
+                        aiState: 'chase',
+                        dodgeDir: { x: 0, y: 0 },
+                        slow: 0,
+                        shield: { active: false, strength: 50 + level * 10 }
+                    };
+                    gameState.enemies.push(enemy);
+                }
             }
         }
 
-        // Input handling
+        // Input
         window.addEventListener('keydown', (e) => {
-            const key = e.key.toLowerCase();
-            gameState.keys[key] = true;
-            if (key === 'r') restart();
-            // Spell casting on key press
-            if (key === 'a' && !gameState.gameOver && !gameState.paused) castSpell('beam');
-            if (key === 's' && !gameState.gameOver && !gameState.paused) castSpell('ice');
-            if (key === 'd' && !gameState.gameOver && !gameState.paused) castSpell('lightning');
+            const key = e.key;
+            gameState.keys[key.toLowerCase()] = true;
+            if (key === 'r' && gameState.currentScreen === 'game') restart();
+            if (['1','2','3','4','5','6','7','8','9'].includes(key) && gameState.currentScreen === 'game' && !gameState.gameOver && !gameState.paused) {
+                castSpell(parseInt(key));
+            }
         });
         window.addEventListener('keyup', (e) => {
             gameState.keys[e.key.toLowerCase()] = false;
@@ -203,61 +372,85 @@
             gameState.mouseX = e.clientX - rect.left;
             gameState.mouseY = e.clientY - rect.top;
         });
-        canvas.addEventListener('click', (e) => {
-            if (!gameState.gameOver && !gameState.paused) castSpell('fire');
-        });
 
-        function castSpell(type) {
-            const spell = gameState.player.spells[type];
+        function castSpell(key) {
+            const spell = gameState.player.spells[key];
             if (!spell || gameState.player.mana < spell.cost || spell.cooldown > 0) return;
-
             const dx = gameState.mouseX - gameState.player.x;
             const dy = gameState.mouseY - gameState.player.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
             const angle = Math.atan2(dy, dx);
+            const dirX = dx / dist;
+            const dirY = dy / dist;
 
-            if (type === 'beam') {
-                // Beam: line from player to mouse, instant damage to enemies in line
-                gameState.beams.push({
-                    startX: gameState.player.x,
-                    startY: gameState.player.y,
-                    endX: gameState.mouseX,
-                    endY: gameState.mouseY,
-                    damage: spell.damage,
-                    life: 200 // ms duration
-                });
-                // Damage enemies along the beam
-                gameState.enemies.forEach(enemy => {
-                    if (lineIntersectsRect(gameState.player.x, gameState.player.y, gameState.mouseX, gameState.mouseY, enemy.x - 10, enemy.y - 10, 20, 20)) {
-                        enemy.health -= spell.damage;
-                        // Particles
-                        for (let p = 0; p < 10; p++) {
-                            gameState.particles.push({
-                                x: enemy.x,
-                                y: enemy.y,
-                                vx: (Math.random() - 0.5) * 6,
-                                vy: (Math.random() - 0.5) * 6,
-                                life: 300,
-                                color: 'beam'
-                            });
-                        }
-                        if (enemy.health <= 0) addXP(50 + gameState.player.level * 10);
+            if (spell.type === 'beam') {
+                gameState.beams.push({ startX: gameState.player.x, startY: gameState.player.y, endX: gameState.mouseX, endY: gameState.mouseY, damage: spell.damage, life: 200 });
+                // Damage along line
+                [...gameState.enemies, ...gameState.bosses].forEach(ent => {
+                    if (lineIntersectsRect(gameState.player.x, gameState.player.y, gameState.mouseX, gameState.mouseY, ent.x - 15, ent.y - 15, 30, 30)) {
+                        const dmg = Math.max(0, spell.damage - ent.def);
+                        ent.health -= dmg;
+                        ent.shield.active = false; // Pierce
+                        addParticles(ent.x, ent.y, 'beam', 10);
                     }
                 });
-            } else {
-                // Projectile spells
-                const velX = (dx / dist) * 8;
-                const velY = (dy / dist) * 8;
+            } else if (spell.type === 'projectile' || spell.type === 'homing' || spell.type === 'homing_missile') {
                 gameState.projectiles.push({
-                    x: gameState.player.x,
-                    y: gameState.player.y,
-                    vx: velX,
-                    vy: velY,
-                    width: 5,
-                    height: 5,
-                    damage: spell.damage,
-                    type: type,
-                    life: 1000
+                    x: gameState.player.x, y: gameState.player.y,
+                    vx: dirX * 8, vy: dirY * 8,
+                    damage: spell.damage, type: spell.name.toLowerCase().replace(' ', '-'),
+                    life: 1000, angle: angle, homing: spell.type.includes('homing') ? 0.05 : 0,
+                    target: null
+                });
+            } else if (spell.type === 'multi') { // Tri-Shot
+                for (let i = -1; i <= 1; i++) {
+                    const a = angle + i * 0.3;
+                    gameState.projectiles.push({
+                        x: gameState.player.x, y: gameState.player.y,
+                        vx: Math.cos(a) * 8, vy: Math.sin(a) * 8,
+                        damage: spell.damage, type: 'tri-shot',
+                        life: 1000, angle: a
+                    });
+                }
+            } else if (spell.type === 'ice') {
+                gameState.projectiles.push({
+                    x: gameState.player.x, y: gameState.player.y,
+                    vx: dirX * 8, vy: dirY * 8,
+                    damage: spell.damage, type: 'ice',
+                    life: 1000, angle: angle, slow: (spell.slow || 0.5)
+                });
+            } else if (spell.type === 'chain') {
+                gameState.projectiles.push({
+                    x: gameState.player.x, y: gameState.player.y,
+                    vx: dirX * 8, vy: dirY * 8,
+                    damage: spell.damage, type: 'lightning',
+                    life: 1000, angle: angle, chainRange: spell.chainRange || 50
+                });
+            } else if (spell.type === 'aoe_break') {
+                // AoE around player or cursor?
+                const cx = gameState.mouseX, cy = gameState.mouseY;
+                [...gameState.enemies, ...gameState.bosses].forEach(ent => {
+                    const edist = Math.sqrt((ent.x - cx)**2 + (ent.y - cy)**2);
+                    if (edist < 100) {
+                        ent.shield.strength = Math.max(0, ent.shield.strength - spell.breakStrength || 50);
+                        if (ent.shield.strength <= 0) ent.shield.active = false;
+                        const dmg = Math.max(0, spell.damage - ent.def); // Non-damaging? Set damage 0
+                        ent.health -= dmg;
+                        addParticles(ent.x, ent.y, 'breaker', 5);
+                    }
+                });
+            } else if (spell.type === 'wave') {
+                // Wave from player to cursor
+                [...gameState.enemies, ...gameState.bosses].forEach(ent => {
+                    const dx2 = ent.x - gameState.player.x;
+                    const dy2 = ent.y - gameState.player.y;
+                    const dist2 = Math.sqrt(dx2**2 + dy2**2);
+                    if (dist2 < spell.aoeRadius || 50 && Math.abs(Math.atan2(dy2, dx2) - angle) < 0.5) {
+                        const dmg = Math.max(0, spell.damage - ent.def);
+                        ent.health -= dmg;
+                        ent.x += dirX * 20; ent.y += dirY * 20; // Knockback
+                        addParticles(ent.x, ent.y, 'wave', 5);
+                    }
                 });
             }
 
@@ -266,171 +459,214 @@
             updateUI();
         }
 
-        // Helper: Check if line intersects rect
+        // Line intersect
         function lineIntersectsRect(x1, y1, x2, y2, rx, ry, rw, rh) {
-            const left = lineSide(x1, y1, x2, y2, rx, ry) * lineSide(x1, y1, x2, y2, rx + rw, ry);
-            const right = lineSide(x1, y1, x2, y2, rx, ry + rh) * lineSide(x1, y1, x2, y2, rx + rw, ry + rh);
-            const top = lineSide(x1, y1, x2, y2, rx, ry) * lineSide(x1, y1, x2, y2, rx, ry + rh);
-            const bottom = lineSide(x1, y1, x2, y2, rx + rw, ry) * lineSide(x1, y1, x2, y2, rx + rw, ry + rh);
-            return (left <= 0 && right <= 0 && top <= 0 && bottom <= 0) || (left === 0 || right === 0 || top === 0 || bottom === 0);
+            // Simplified check
+            const distToLine = Math.abs((y2 - y1) * (rx + rw/2 - x1) - (x2 - x1) * (ry + rh/2 - y1)) / Math.sqrt((y2 - y1)**2 + (x2 - x1)**2);
+            return distToLine < Math.max(rw, rh) / 2 && Math.min(x1, x2) < rx + rw && Math.max(x1, x2) > rx && Math.min(y1, y2) < ry + rh && Math.max(y1, y2) > ry;
         }
 
-        function lineSide(x1, y1, x2, y2, x, y) {
-            return (y1 - y2) * (x - x2) + (x2 - x1) * (y - y2);
+        function addParticles(x, y, type, num = 5) {
+            const colors = { beam: '#fff', ice: '#0ff', lightning: '#ff0', breaker: '#f0f', wave: '#00f', shield: '#0f0' };
+            for (let i = 0; i < num; i++) {
+                gameState.particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6,
+                    life: 500,
+                    color: colors[type] || '#f80',
+                    size: 2
+                });
+            }
         }
 
         function updatePlayer(dt) {
-            // Movement: WASD or Arrows
+            if (gameState.currentScreen !== 'game') return;
+
+            // Shield
+            const space = gameState.keys[' '];
+            gameState.player.shield.active = space && (gameState.player.shield.omni || true);
+            if (gameState.player.shield.active) {
+                // Mana cost based on absorbed, but since dt, approximate
+                // Actual cost in collision
+            }
+
+            // Movement
             const up = gameState.keys['w'] || gameState.keys['arrowup'];
             const down = gameState.keys['s'] || gameState.keys['arrowdown'];
             const left = gameState.keys['a'] || gameState.keys['arrowleft'];
             const right = gameState.keys['d'] || gameState.keys['arrowright'];
+            let mx = 0, my = 0;
+            if (up) my -= 1;
+            if (down) my += 1;
+            if (left) mx -= 1;
+            if (right) mx += 1;
+            const moveDist = Math.sqrt(mx**2 + my**2);
+            if (moveDist > 0) {
+                gameState.player.x += (mx / moveDist) * gameState.player.speed * dt * 60;
+                gameState.player.y += (my / moveDist) * gameState.player.speed * dt * 60;
+            }
 
-            if (up && gameState.player.y > 10) gameState.player.y -= gameState.player.speed * dt * 60;
-            if (down && gameState.player.y < canvas.height - 30) gameState.player.y += gameState.player.speed * dt * 60;
-            if (left && gameState.player.x > 10) gameState.player.x -= gameState.player.speed * dt * 60;
-            if (right && gameState.player.x < canvas.width - 30) gameState.player.x += gameState.player.speed * dt * 60;
-
-            // Regen mana
-            gameState.player.mana = Math.min(gameState.player.maxMana, gameState.player.mana + dt * 20);
-            // Cooldowns
+            // Regen
+            const regen = gameState.player.manaRegen || 20;
+            gameState.player.mana = Math.min(gameState.player.maxMana, gameState.player.mana + dt * regen);
             Object.values(gameState.player.spells).forEach(s => s.cooldown = Math.max(0, s.cooldown - dt * 1000));
 
-            // Keep in bounds
+            // Bounds
             gameState.player.x = Math.max(10, Math.min(canvas.width - 30, gameState.player.x));
             gameState.player.y = Math.max(10, Math.min(canvas.height - 30, gameState.player.y));
         }
 
-        function updateEnemies(dt) {
-            gameState.enemies.forEach((enemy, idx) => {
-                const dx = gameState.player.x - enemy.x;
-                const dy = gameState.player.y - enemy.y;
+        function updateEntities(entities, dt, isBoss = false) {
+            entities.forEach((ent, idx) => {
+                const speedMod = ent.slow > 0 ? 0.5 : 1;
+                ent.slow = Math.max(0, ent.slow - dt * 1000);
+
+                const dx = gameState.player.x - ent.x;
+                const dy = gameState.player.y - ent.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                // Improved AI: Chase, occasionally dodge or cast
-                if (Date.now() - enemy.lastSpell > enemy.spellCooldown) {
-                    enemy.aiState = 'cast';
-                    // Enemy casts a projectile towards player
-                    const velX = (dx / dist) * 5;
-                    const velY = (dy / dist) * 5;
-                    gameState.enemyProjectiles.push({
-                        x: enemy.x,
-                        y: enemy.y,
-                        vx: velX,
-                        vy: velY,
-                        width: 5,
-                        height: 5,
-                        damage: enemy.attackDamage,
-                        life: 1000,
-                        color: enemy.color
-                    });
-                    enemy.lastSpell = Date.now();
-                    enemy.aiState = 'chase';
-                } else if (Math.random() < 0.01 * (1 + gameState.player.level)) { // Dodge chance increases with level
-                    enemy.aiState = 'dodge';
-                    enemy.dodgeDir.x = (Math.random() - 0.5) * 2;
-                    enemy.dodgeDir.y = (Math.random() - 0.5) * 2;
+                // AI
+                if (Date.now() - ent.lastSpell > ent.spellCooldown) {
+                    // Enemy spell: random from types
+                    const enemySpells = ['projectile', 'beam', 'wave'];
+                    const spellType = enemySpells[Math.floor(Math.random() * enemySpells.length)];
+                    if (spellType === 'projectile') {
+                        const velX = (dx / dist) * 5;
+                        const velY = (dy / dist) * 5;
+                        gameState.enemyProjectiles.push({
+                            x: ent.x, y: ent.y, vx: velX, vy: velY,
+                            damage: ent.atk, life: 1000, color: ent.color
+                        });
+                    } // Add more
+                    ent.lastSpell = Date.now();
+                } else if (Math.random() < 0.01 * gameState.player.level) {
+                    ent.aiState = 'dodge';
+                    ent.dodgeDir.x = (Math.random() - 0.5) * 2;
+                    ent.dodgeDir.y = (Math.random() - 0.5) * 2;
                 } else {
-                    enemy.aiState = 'chase';
+                    ent.aiState = 'chase';
                 }
 
-                if (enemy.aiState === 'chase' && dist > 30) {
-                    enemy.x += (dx / dist) * enemy.speed * dt * 60;
-                    enemy.y += (dy / dist) * enemy.speed * dt * 60;
-                } else if (enemy.aiState === 'dodge') {
-                    enemy.x += enemy.dodgeDir.x * enemy.speed * 2 * dt * 60;
-                    enemy.y += enemy.dodgeDir.y * enemy.speed * 2 * dt * 60;
-                    if (Math.random() < 0.1) enemy.aiState = 'chase'; // Stop dodging
+                if (ent.aiState === 'chase' && dist > 30) {
+                    ent.x += (dx / dist) * ent.speed * speedMod * dt * 60;
+                    ent.y += (dy / dist) * ent.speed * speedMod * dt * 60;
+                } else if (ent.aiState === 'dodge') {
+                    ent.x += ent.dodgeDir.x * ent.speed * 2 * speedMod * dt * 60;
+                    ent.y += ent.dodgeDir.y * ent.speed * 2 * speedMod * dt * 60;
+                    if (Math.random() < 0.1) ent.aiState = 'chase';
                 }
 
-                // Melee attack if close
-                if (dist < 30 && Date.now() - enemy.lastAttack > enemy.attackCooldown) {
-                    gameState.player.health -= enemy.attackDamage;
-                    enemy.lastAttack = Date.now();
-                    if (gameState.player.health <= 0) {
-                        gameOver();
+                // Attack
+                if (dist < 30 && Date.now() - ent.lastAttack > ent.attackCooldown) {
+                    let dmg = Math.max(0, ent.atk - gameState.player.def);
+                    if (gameState.player.shield.active && gameState.player.shield.strength > 0) {
+                        const absorbed = Math.min(dmg, gameState.player.shield.strength);
+                        gameState.player.shield.strength -= absorbed;
+                        gameState.player.mana -= absorbed * gameState.player.shield.yield;
+                        dmg -= absorbed;
+                        addParticles(gameState.player.x, gameState.player.y, 'shield', 3);
+                        if (gameState.player.shield.strength <= 0) gameState.player.shield.active = false;
                     }
-                    updateUI();
-                }
-
-                // Death
-                if (enemy.health <= 0) {
-                    gameState.enemies.splice(idx, 1);
-                    addXP(50 + gameState.player.level * 10);
-                }
-            });
-
-            if (gameState.enemies.length === 0) {
-                levelUp();
-            }
-        }
-
-        function updateProjectiles(dt) {
-            // Player projectiles
-            gameState.projectiles.forEach((proj, idx) => {
-                proj.x += proj.vx * dt * 60;
-                proj.y += proj.vy * dt * 60;
-                proj.life -= dt * 1000;
-
-                // Collision with enemies
-                gameState.enemies.forEach(enemy => {
-                    if (proj.x > enemy.x - 10 && proj.x < enemy.x + 30 &&
-                        proj.y > enemy.y - 10 && proj.y < enemy.y + 30) {
-                        enemy.health -= proj.damage;
-                        gameState.projectiles.splice(idx, 1);
-                        for (let p = 0; p < 5; p++) {
-                            gameState.particles.push({
-                                x: proj.x,
-                                y: proj.y,
-                                vx: (Math.random() - 0.5) * 4,
-                                vy: (Math.random() - 0.5) * 4,
-                                life: 500,
-                                color: proj.type
-                            });
-                        }
-                        if (proj.type === 'lightning') {
-                            // Chain to nearby enemy
-                            gameState.enemies.forEach(other => {
-                                if (other !== enemy && Math.sqrt((other.x - enemy.x)**2 + (other.y - enemy.y)**2) < 50) {
-                                    other.health -= proj.damage * 0.5;
-                                    for (let p = 0; p < 3; p++) {
-                                        gameState.particles.push({
-                                            x: other.x,
-                                            y: other.y,
-                                            vx: (Math.random() - 0.5) * 4,
-                                            vy: (Math.random() - 0.5) * 4,
-                                            life: 500,
-                                            color: 'lightning'
-                                        });
-                                    }
-                                }
-                            });
-                        }
-                    }
-                });
-
-                if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height || proj.life <= 0) {
-                    gameState.projectiles.splice(idx, 1);
-                }
-            });
-
-            // Enemy projectiles
-            gameState.enemyProjectiles.forEach((proj, idx) => {
-                proj.x += proj.vx * dt * 60;
-                proj.y += proj.vy * dt * 60;
-                proj.life -= dt * 1000;
-
-                // Collision with player
-                if (proj.x > gameState.player.x - 10 && proj.x < gameState.player.x + 30 &&
-                    proj.y > gameState.player.y - 10 && proj.y < gameState.player.y + 30) {
-                    gameState.player.health -= proj.damage;
-                    gameState.enemyProjectiles.splice(idx, 1);
+                    gameState.player.health -= dmg;
+                    ent.lastAttack = Date.now();
                     if (gameState.player.health <= 0) gameOver();
                     updateUI();
                 }
 
+                if (ent.health <= 0) {
+                    if (isBoss) gameState.bosses.splice(idx, 1);
+                    else gameState.enemies.splice(idx, 1);
+                    addXP( isBoss ? 500 : 50 + gameState.player.level * 10);
+                }
+            });
+        }
+
+        function updateProjectiles(dt) {
+            if (gameState.currentScreen !== 'game') return;
+
+            // Player proj
+            gameState.projectiles.forEach((proj, pidx) => {
+                if (proj.homing && proj.life > 500) { // Homing logic
+                    let closest = null, minDist = Infinity;
+                    [...gameState.enemies, ...gameState.bosses].forEach(ent => {
+                        const pdist = Math.sqrt((proj.x - ent.x)**2 + (proj.y - ent.y)**2);
+                        if (pdist < minDist) {
+                            minDist = pdist;
+                            closest = ent;
+                        }
+                    });
+                    if (closest) {
+                        const hdx = closest.x - proj.x;
+                        const hdy = closest.y - proj.y;
+                        const hdist = Math.sqrt(hdx**2 + hdy**2) || 1;
+                        proj.vx += (hdx / hdist) * proj.homing * dt * 60;
+                        proj.vy += (hdy / hdist) * proj.homing * dt * 60;
+                    }
+                }
+                proj.x += proj.vx * dt * 60;
+                proj.y += proj.vy * dt * 60;
+                proj.life -= dt * 1000;
+                proj.angle = Math.atan2(proj.vy, proj.vx);
+
+                // Collisions
+                [...gameState.enemies, ...gameState.bosses].forEach(ent => {
+                    if (proj.x > ent.x - 15 && proj.x < ent.x + 15 &&
+                        proj.y > ent.y - 15 && proj.y < ent.y + 15) {
+                        let dmg = Math.max(0, proj.damage - ent.def);
+                        if (ent.shield.active && ent.shield.strength > 0) {
+                            const absorbed = Math.min(dmg, ent.shield.strength);
+                            ent.shield.strength -= absorbed;
+                            dmg -= absorbed;
+                            if (ent.shield.strength <= 0) ent.shield.active = false;
+                        }
+                        ent.health -= dmg;
+                        gameState.projectiles.splice(pidx, 1);
+                        addParticles(ent.x, ent.y, proj.type, 5);
+                        if (proj.type === 'ice') ent.slow = 2000;
+                        if (proj.type === 'lightning') {
+                            // Chain
+                            [...gameState.enemies, ...gameState.bosses].forEach(other => {
+                                if (other !== ent && Math.sqrt((other.x - ent.x)**2 + (other.y - ent.y)**2) < proj.chainRange) {
+                                    other.health -= proj.damage * 0.5;
+                                    addParticles(other.x, other.y, 'lightning', 3);
+                                }
+                            });
+                        }
+                        return;
+                    }
+                });
+
                 if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height || proj.life <= 0) {
-                    gameState.enemyProjectiles.splice(idx, 1);
+                    gameState.projectiles.splice(pidx, 1);
+                }
+            });
+
+            // Enemy proj - shield block
+            gameState.enemyProjectiles.forEach((proj, eidx) => {
+                proj.x += proj.vx * dt * 60;
+                proj.y += proj.vy * dt * 60;
+                proj.life -= dt * 1000;
+
+                if (gameState.player.shield.active && gameState.player.shield.strength > 0 &&
+                    Math.sqrt((proj.x - gameState.player.x)**2 + (proj.y - gameState.player.y)**2) < 40) {
+                    const dmg = proj.damage;
+                    const absorbed = Math.min(dmg, gameState.player.shield.strength);
+                    gameState.player.shield.strength -= absorbed;
+                    gameState.player.mana -= absorbed * gameState.player.shield.yield;
+                    gameState.enemyProjectiles.splice(eidx, 1);
+                    addParticles(proj.x, proj.y, 'shield', 5);
+                    if (gameState.player.shield.strength <= 0) gameState.player.shield.active = false;
+                } else if (proj.x > gameState.player.x - 10 && proj.x < gameState.player.x + 30 &&
+                           proj.y > gameState.player.y - 10 && proj.y < gameState.player.y + 30) {
+                    let dmg = Math.max(0, proj.damage - gameState.player.def);
+                    gameState.player.health -= dmg;
+                    gameState.enemyProjectiles.splice(eidx, 1);
+                    if (gameState.player.health <= 0) gameOver();
+                }
+
+                if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height || proj.life <= 0) {
+                    gameState.enemyProjectiles.splice(eidx, 1);
                 }
             });
         }
@@ -438,9 +674,7 @@
         function updateBeams(dt) {
             gameState.beams.forEach((beam, idx) => {
                 beam.life -= dt * 1000;
-                if (beam.life <= 0) {
-                    gameState.beams.splice(idx, 1);
-                }
+                if (beam.life <= 0) gameState.beams.splice(idx, 1);
             });
         }
 
@@ -449,9 +683,7 @@
                 part.x += part.vx * dt * 60;
                 part.y += part.vy * dt * 60;
                 part.life -= dt * 1000;
-                if (part.life <= 0) {
-                    gameState.particles.splice(idx, 1);
-                }
+                if (part.life <= 0) gameState.particles.splice(idx, 1);
             });
         }
 
@@ -466,6 +698,9 @@
                 gameState.player.maxMana += 20;
                 gameState.player.mana = gameState.player.maxMana;
                 gameState.player.speed += 0.2;
+                gameState.player.atk += 5;
+                gameState.player.def += 3;
+                gameState.player.pl += 0.5;
                 showLevelUp();
             }
             updateUI();
@@ -473,23 +708,30 @@
         }
 
         function levelUp() {
-            addXP(100); // Bonus for clearing wave
-            generateEnemies(gameState.player.level);
+            addXP(100);
+            generateWave(gameState.player.level);
         }
 
         function showLevelUp() {
             gameState.paused = true;
+            const available = gameState.upgradePool.filter(u => !gameState.player.usedUpgrades.has(u.id));
+            if (available.length === 0) available = gameState.upgradePool; // Reset if all used
+            const choices = [];
+            while (choices.length < 3 && available.length > 0) {
+                const rand = available[Math.floor(Math.random() * available.length)];
+                if (!choices.some(c => c.id === rand.id)) {
+                    choices.push(rand);
+                }
+            }
+            upgradeOptions.innerHTML = choices.map(c => `<button onclick="selectUpgrade('${c.id}')">${c.name}</button>`).join('');
+            document.getElementById('upgradeDesc').innerHTML = `Level ${gameState.player.level}!`;
             levelUpDiv.style.display = 'block';
-            document.getElementById('upgradeDesc').innerHTML = `Level ${gameState.player.level} unlocked! Progression enhanced.`;
         }
 
-        window.upgrade = function(type) {
-            const spell = gameState.player.spells[type];
-            if (spell) {
-                spell.damage += 10;
-                spell.cost += 5;
-                spell.maxCd = Math.max(200, spell.maxCd - 50);
-            }
+        window.selectUpgrade = function(id) {
+            const upgrade = gameState.upgradePool.find(u => u.id === id);
+            upgrade.apply(gameState.player);
+            gameState.player.usedUpgrades.add(id);
             levelUpDiv.style.display = 'none';
             gameState.paused = false;
             saveGame();
@@ -497,107 +739,173 @@
 
         function gameOver() {
             gameState.gameOver = true;
-            alert('Game Over! Alternate has fallen. Press R to restart.');
-            saveGame();
+            alert('Game Over! Press R or back to menu.');
         }
 
         function restart() {
-            gameState = {
-                player: {
-                    x: 400, y: 300, width: 20, height: 20,
-                    health: 100, maxHealth: 100,
-                    mana: 100, maxMana: 100,
-                    speed: 3,
-                    level: 1, xp: 0, xpToNext: 100,
-                    spells: {
-                        fire: { damage: 20, cost: 20, cooldown: 0, maxCd: 500 },
-                        beam: { damage: 30, cost: 30, cooldown: 0, maxCd: 1500 },
-                        ice: { damage: 15, cost: 15, cooldown: 0, maxCd: 800 },
-                        lightning: { damage: 25, cost: 25, cooldown: 0, maxCd: 1000 }
-                    }
+            // Reset player, clear arrays
+            gameState.player = {
+                x: 400, y: 300, width: 20, height: 20,
+                health: 100, maxHealth: 100,
+                mana: 100, maxMana: 100,
+                speed: 3,
+                level: 1, xp: 0, xpToNext: 100,
+                pl: 1, atk: 20, def: 10,
+                spells: {
+                    1: { name: 'Single-Shot', damage: 20, cost: 20, cooldown: 0, maxCd: 500, type: 'projectile' },
+                    2: { name: 'Tri-Shot', damage: 15, cost: 25, cooldown: 0, maxCd: 700, type: 'multi' },
+                    3: { name: 'Beam', damage: 30, cost: 30, cooldown: 0, maxCd: 1500, type: 'beam' },
+                    4: { name: 'Ice Shard', damage: 15, cost: 15, cooldown: 0, maxCd: 800, type: 'ice' },
+                    5: { name: 'Lightning', damage: 25, cost: 25, cooldown: 0, maxCd: 1000, type: 'chain' },
+                    6: { name: 'Curve-Shot', damage: 25, cost: 25, cooldown: 0, maxCd: 900, type: 'homing', homingStrength: 0.05 },
+                    7: { name: 'Shield Breaker', damage: 0, cost: 40, cooldown: 0, maxCd: 2000, type: 'aoe_break', breakStrength: 50 },
+                    8: { name: 'Homing Missile', damage: 35, cost: 35, cooldown: 0, maxCd: 1200, type: 'homing_missile' },
+                    9: { name: 'Force Wave', damage: 20, cost: 30, cooldown: 0, maxCd: 1100, type: 'wave', aoeRadius: 50 }
                 },
-                enemies: [],
-                projectiles: [],
-                beams: [],
-                enemyProjectiles: [],
-                particles: [],
-                keys: {},
-                mouseX: 0, mouseY: 0,
-                lastTime: 0,
-                gameOver: false,
-                paused: false
+                shield: { active: false, strength: 100, absorbed: 0, yield: 1.0, omni: false },
+                usedUpgrades: new Set()
             };
-            generateEnemies(1);
+            gameState.enemies = [];
+            gameState.bosses = [];
+            gameState.projectiles = [];
+            gameState.beams = [];
+            gameState.enemyProjectiles = [];
+            gameState.particles = [];
+            gameState.gameOver = false;
+            gameState.paused = false;
+            generateWave(1);
             updateUI();
             localStorage.removeItem('alternateSave');
         }
 
         function updateUI() {
+            if (gameState.currentScreen !== 'game') return;
             uiHealth.textContent = Math.floor(gameState.player.health);
             uiMana.textContent = Math.floor(gameState.player.mana);
+            uiPL.textContent = gameState.player.pl.toFixed(1);
+            uiATK.textContent = gameState.player.atk;
+            uiDEF.textContent = gameState.player.def;
             uiLevel.textContent = gameState.player.level;
             uiXP.textContent = Math.floor(gameState.player.xp);
             uiNext.textContent = gameState.player.xpToNext;
-
-            // Cooldown displays
-            cdFire.textContent = (gameState.player.spells.fire.cooldown / 1000).toFixed(1);
-            cdBeam.textContent = (gameState.player.spells.beam.cooldown / 1000).toFixed(1);
-            cdIce.textContent = (gameState.player.spells.ice.cooldown / 1000).toFixed(1);
-            cdLightning.textContent = (gameState.player.spells.lightning.cooldown / 1000).toFixed(1);
+            for (let i = 0; i < 9; i++) {
+                cds[i].textContent = (gameState.player.spells[i+1].cooldown / 1000).toFixed(1);
+            }
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw player
-            ctx.fillStyle = '#00f';
-            ctx.fillRect(gameState.player.x - 10, gameState.player.y - 10, 20, 20);
-            ctx.fillStyle = '#f0f';
-            ctx.fillRect(gameState.player.x - 5, gameState.player.y - 25, 10, 15);
+            if (gameState.currentScreen !== 'game') return;
 
-            // Draw enemies
-            gameState.enemies.forEach(enemy => {
-                ctx.fillStyle = enemy.color;
-                ctx.fillRect(enemy.x - 10, enemy.y - 10, 20, 20);
+            // Shield
+            if (gameState.player.shield.active) {
+                ctx.strokeStyle = gameState.player.shield.omni ? '#0ff' : '#00f';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(gameState.player.x, gameState.player.y, 40 + (gameState.player.shield.omni ? 20 : 0), 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Player
+            drawStickFigure(gameState.player.x, gameState.player.y, '#00f', true);
+
+            // Enemies
+            gameState.enemies.forEach(ent => drawStickFigure(ent.x, ent.y, ent.color, ent.type.includes('Mage')));
+            gameState.bosses.forEach(boss => drawStickFigure(boss.x, boss.y, boss.color, true, 1.5));
+
+            // Health bars
+            [...gameState.enemies, ...gameState.bosses].forEach(ent => {
                 ctx.fillStyle = '#f00';
-                ctx.fillRect(enemy.x - 10, enemy.y - 25, 20, 3);
+                ctx.fillRect(ent.x - 15, ent.y - 35, 30, 3);
                 ctx.fillStyle = '#0f0';
-                ctx.fillRect(enemy.x - 10, enemy.y - 25, (enemy.health / enemy.maxHealth) * 20, 3);
+                ctx.fillRect(ent.x - 15, ent.y - 35, (ent.health / ent.maxHealth) * 30, 3);
             });
 
-            // Draw player projectiles
+            // Projectiles with designs
             gameState.projectiles.forEach(proj => {
-                ctx.fillStyle = proj.type === 'fire' ? '#f00' : proj.type === 'ice' ? '#0ff' : proj.type === 'lightning' ? '#ff0' : '#fff';
-                ctx.fillRect(proj.x - 2.5, proj.y - 2.5, 5, 5);
+                ctx.save();
+                ctx.translate(proj.x, proj.y);
+                ctx.rotate(proj.angle);
+                let design = '';
+                switch (proj.type) {
+                    case 'single-shot':
+                    case 'tri-shot':
+                        ctx.fillStyle = '#f80';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                        break;
+                    case 'beam':
+                        // Drawn separately
+                        break;
+                    case 'ice':
+                        ctx.fillStyle = '#0ff';
+                        ctx.beginPath();
+                        ctx.moveTo(0, -6);
+                        ctx.lineTo(-3, 3);
+                        ctx.lineTo(3, 3);
+                        ctx.closePath();
+                        ctx.fill();
+                        break;
+                    case 'lightning':
+                        ctx.strokeStyle = '#ff0';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(0, 10 + Math.random() * 5 - 2.5);
+                        ctx.lineTo(Math.random() * 10 - 5, 20);
+                        ctx.stroke();
+                        break;
+                    case 'curve-shot':
+                    case 'homing-missile':
+                        ctx.fillStyle = '#ff0';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                        ctx.fill();
+                        break;
+                    case 'force-wave':
+                        // Wave drawn as line
+                        ctx.strokeStyle = '#00f';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.moveTo(-20, 0);
+                        ctx.lineTo(20, 0);
+                        ctx.stroke();
+                        break;
+                }
+                ctx.restore();
             });
 
-            // Draw enemy projectiles
+            // Enemy proj
             gameState.enemyProjectiles.forEach(proj => {
                 ctx.fillStyle = proj.color;
-                ctx.fillRect(proj.x - 2.5, proj.y - 2.5, 5, 5);
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, 3, 0, Math.PI * 2);
+                ctx.fill();
             });
 
-            // Draw beams
+            // Beams
             gameState.beams.forEach(beam => {
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 3;
+                ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.moveTo(beam.startX, beam.startY);
                 ctx.lineTo(beam.endX, beam.endY);
                 ctx.stroke();
+                ctx.shadowBlur = 0;
             });
 
-            // Draw particles
+            // Particles
             gameState.particles.forEach(part => {
-                ctx.fillStyle = part.color === 'fire' ? '#f80' : part.color === 'ice' ? '#0ff' : part.color === 'lightning' ? '#ff0' : '#fff';
+                ctx.fillStyle = part.color;
                 ctx.globalAlpha = part.life / 500;
-                ctx.fillRect(part.x - 2, part.y - 2, 4, 4);
+                ctx.fillRect(part.x - part.size, part.y - part.size, part.size * 2, part.size * 2);
                 ctx.globalAlpha = 1;
             });
 
-            // Aim line
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1;
+            // Aim
+            ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(gameState.player.x, gameState.player.y);
             ctx.lineTo(gameState.mouseX, gameState.mouseY);
@@ -613,27 +921,37 @@
             }
         }
 
+        let animationId;
         function gameLoop(currentTime) {
-            const dt = (currentTime - gameState.lastTime) / 1000;
+            if (gameState.currentScreen !== 'game') {
+                animationId = requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            const dt = Math.min((currentTime - gameState.lastTime) / 1000, 1/30);
             gameState.lastTime = currentTime;
 
             if (!gameState.gameOver && !gameState.paused) {
                 updatePlayer(dt);
-                updateEnemies(dt);
+                updateEntities(gameState.enemies, dt);
+                updateEntities(gameState.bosses, dt, true);
                 updateProjectiles(dt);
                 updateBeams(dt);
                 updateParticles(dt);
                 updateUI();
+
+                // Check clear
+                if (gameState.enemies.length === 0 && gameState.bosses.length === 0) {
+                    levelUp();
+                }
             }
 
             draw();
-            requestAnimationFrame(gameLoop);
+            animationId = requestAnimationFrame(gameLoop);
         }
 
         // Init
-        loadSave();
-        if (gameState.enemies.length === 0) generateEnemies(gameState.player.level);
-        updateUI();
+        mainMenu.style.display = 'block';
         requestAnimationFrame(gameLoop);
     </script>
 </body>
