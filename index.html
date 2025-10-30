@@ -1,1151 +1,539 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alternate's Magical Evolution</title>
-    <style>
-        body {
-            margin: 0;
-            background: black;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-family: Arial, sans-serif;
-        }
-        canvas {
-            border: 1px solid white;
-            background: black;
-        }
-    </style>
+  <title>Alternate's Magical Evolution</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    #gameCanvas { display: block; margin: auto; background: black; cursor: crosshair; }
+    #ui {
+      position: absolute; top: 10px; left: 10px; color: #fff; font-family: Arial, sans-serif; font-size: 14px;
+    }
+    #spellList {
+      position: absolute; top: 10px; right: 10px; width: 200px; color: #fff; font-family: Arial, sans-serif; font-size: 14px;
+      background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; height: 300px; overflow-y: auto;
+    }
+    #controls {
+      position: absolute; bottom: 10px; left: 10px; color: #fff; font-family: Arial, sans-serif; font-size: 12px;
+    }
+    button { padding: 10px 20px; font-size: 16px; margin: 5px; }
+  </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const CW = 800;
-        const CH = 600;
-        const CX = 400;
-        const CY = 300;
+<div id="ui"></div>
+<div id="spellList"></div>
+<div id="controls">Move: WASD/Arrows, Aim: Mouse, Fire: Click, Spell: Q/E, Shield: SPACE</div>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-        let gameState = 'menu';
-        let player;
-        let enemies = [];
-        let projectiles = [];
-        let particles = [];
-        let beams = []; // for lasting beams
-        let wave = 1;
-        let kills = 0;
-        let gameTime = 0;
-        let shake = 0;
-        let upgrades = []; // for level up
+let keysDown = {};
+let mouse = { x: 0, y: 0, down: false };
 
-        let keys = {};
-        let mouse = { x: CX, y: CY, down: false };
+// Game state
+let game = {
+  state: 'menu', // 'menu', 'play', 'levelup', 'gameover'
+  level: 1,
+  xp: 0,
+  nextLevelXP: 100,
+  wave: 1,
+  enemies: [],
+  particles: [],
+  spells: [],
+  upgrades: [],
+  lockInput: false
+};
 
-        // PL based unlocks
-        const PL_UNLOCKS = {
-            1: [1],
-            2: [1, 2, 4],
-            3: [1, 2, 3, 4],
-            4: [1, 2, 3, 4, 5, 7],
-            5: [1, 2, 3, 4, 5, 6, 7],
-            6: [1, 2, 3, 4, 5, 6, 7, 8],
-            7: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-            8: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-            9: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-            10: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-            11: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-            12: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-            13: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-            14: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-            15: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-            16: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-        };
+// Player (Alternate) object
+class Player {
+  constructor() {
+    this.x = canvas.width/2;
+    this.y = canvas.height/2;
+    this.radius = 15;
+    this.color = 'blue';
+    this.hatColor = 'purple';
+    this.health = 100;
+    this.maxHealth = 100;
+    this.mana = 100;
+    this.maxMana = 100;
+    this.speed = 3;
+    this.PL = 1; // power level
+    this.ATK = 20;
+    this.DEF = 10;
+    this.ATKXP = 0;
+    this.DEFXP = 0;
+    this.spellUpgrades = {};
+    this.shield = {
+      active: false,
+      yield: 1.0, // damage to mana ratio
+      radius: 40,
+      strength: 100,
+      maxStrength: 100
+    };
+    this.spells = {};
+    this.spellOrder = [];
+    this.selectedSpellIndex = 0;
+    this.canMove = true;
+  }
+  
+  move() {
+    if (!this.canMove) return;
+    let mv = {x:0, y:0};
+    if (keysDown['ArrowUp']||keysDown['w']) mv.y -= 1;
+    if (keysDown['ArrowDown']||keysDown['s']) mv.y += 1;
+    if (keysDown['ArrowLeft']||keysDown['a']) mv.x -= 1;
+    if (keysDown['ArrowRight']||keysDown['d']) mv.x += 1;
+    // normalize
+    let len = Math.hypot(mv.x, mv.y);
+    if (len > 0) { mv.x /= len; mv.y /= len; }
+    this.x += mv.x * this.speed;
+    this.y += mv.y * this.speed;
+    // bound
+    this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+    this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+  }
+  
+  update() {
+    // regen health and mana
+    this.health = Math.min(this.maxHealth, this.health + 0.05);
+    this.mana = Math.min(this.maxMana, this.mana + 0.2);
+    // handle shield
+    if (keysDown[' ']) {
+      if (this.mana > 0 && this.shield.strength > 0) {
+        this.shield.active = true;
+      }
+    } else {
+      this.shield.active = false;
+    }
+    // Other updates ...
+  }
+  
+  draw() {
+    // draw player as stickman with colored hat
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    // draw body
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    // head
+    ctx.arc(0, -this.radius, 5, 0, Math.PI * 2);
+    ctx.stroke();
+    // body line
+    ctx.beginPath();
+    ctx.moveTo(0, -this.radius + 5);
+    ctx.lineTo(0, this.radius);
+    ctx.stroke();
+    // arms
+    ctx.beginPath();
+    ctx.moveTo(0, -this.radius + 10);
+    ctx.lineTo(-10, 0);
+    ctx.moveTo(0, -this.radius + 10);
+    ctx.lineTo(10, 0);
+    ctx.stroke();
+    // legs
+    ctx.beginPath();
+    ctx.moveTo(0, this.radius);
+    ctx.lineTo(-7, this.radius + 15);
+    ctx.moveTo(0, this.radius);
+    ctx.lineTo(7, this.radius + 15);
+    ctx.stroke();
+    // hat
+    ctx.fillStyle = this.hatColor;
+    ctx.beginPath();
+    ctx.moveTo(0, -this.radius - 5);
+    ctx.lineTo(-10, -this.radius + 5);
+    ctx.lineTo(10, -this.radius + 5);
+    ctx.fill();
+    // shield bubble
+    if (this.shield.active) {
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(0,255,255,0.5)';
+      ctx.arc(0, 0, this.shield.radius, 0, 2*Math.PI);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  
+  shoot() {
+    // Fire selected spell if available
+    let spellName = this.spellOrder[this.selectedSpellIndex];
+    let spell = this.spells[spellName];
+    if (spell && !spell.locked) {
+      spell.cast();
+    }
+  }
+}
 
-        // Attack definitions
-        const ATTACKS = {
-            1: { name: 'Magic Shot', unlocked: true, cd: 200, lastUse: 0, mana: 5, damage: 20, type: 'projectile', color: 'orange', size: 5, speed: 5, homing: 0.01, bounces: 0 },
-            2: { name: 'Tri-Shot', unlocked: false, cd: 300, lastUse: 0, mana: 10, damage: 15, type: 'spread', count: 3, angle: 0.3, color: 'blue', size: 4, speed: 4 },
-            3: { name: 'Beam Shot', unlocked: false, cd: 500, lastUse: 0, mana: 15, damage: 30, type: 'beam', color: 'white', thickness: 2, speed: 10, pierce: true, stun: 1000 },
-            4: { name: 'Ice Shard', unlocked: false, cd: 400, lastUse: 0, mana: 12, damage: 18, type: 'projectile', color: 'cyan', size: 6, speed: 4, effect: 'slow', effectDur: 2000, effectVal: 0.5 },
-            5: { name: 'Lightning', unlocked: false, cd: 800, lastUse: 0, mana: 20, damage: 25, type: 'lightning', color: 'yellow', size: 3, speed: 8, chains: 0, chainRange: 80, dot: false, dotDur: 0 },
-            6: { name: 'Curve Shot', unlocked: false, cd: 350, lastUse: 0, mana: 8, damage: 22, type: 'projectile', color: 'green', size: 5, speed: 4, homing: 0.05 },
-            7: { name: 'Shield Breaker', unlocked: false, cd: 600, lastUse: 0, mana: 18, damage: 10, type: 'aoe', radius: 50, color: 'purple', break: 50, pierce: false },
-            8: { name: 'Homing Missile', unlocked: false, cd: 700, lastUse: 0, mana: 25, damage: 40, type: 'projectile', color: 'red', size: 8, speed: 3, homing: 0.1, explode: false, explodeRad: 40 },
-            9: { name: 'Force Wave', unlocked: false, cd: 500, lastUse: 0, mana: 15, damage: 20, type: 'cone', count: 7, angle: 0.5, color: 'blue', size: 3, speed: 6, knockback: 50 },
-            10: { name: 'Penta Shot', unlocked: false, cd: 150, lastUse: 0, mana: 12, damage: 12, type: 'spread', count: 5, angle: 0.4, color: 'lightblue', size: 3, speed: 5 },
-            11: { name: 'Recursive Shot', unlocked: false, cd: 900, lastUse: 0, mana: 30, damage: 35, type: 'projectile', color: 'magenta', size: 6, speed: 5, bounces: 3, homing: 0 },
-            12: { name: 'Shield Attack', unlocked: false, cd: 400, lastUse: 0, mana: 20, damage: 25, type: 'projectile', color: 'gold', size: 10, speed: 4, ignoreShield: true, reflect: true },
-            13: { name: 'Beta Laser', unlocked: false, cd: 1200, lastUse: 0, mana: 50, damage: 60, type: 'beam', color: 'red', thickness: 6, speed: 0, duration: 3000, dot: true, dotDur: 3000, dotDmg: 10 },
-            14: { name: 'Super Speed', unlocked: false, cd: 10000, lastUse: 0, mana: 40, damage: 0, type: 'buff', duration: 5000, speedMult: 2, invuln: false }
-        };
+let player = new Player();
+game.spells = {}; // store global references to spells
 
-        class Player {
-            constructor() {
-                this.reset();
-                this.attacks = { ...ATTACKS };
-                this.setUnlocks();
-            }
-            reset() {
-                this.x = CX;
-                this.y = CY;
-                this.health = 100;
-                this.maxHealth = 100;
-                this.mana = 100;
-                this.maxMana = 100;
-                this.manaRegen = 0.33; // ~20/sec at 60fps
-                this.speed = 3;
-                this.pl = 1;
-                this.atk = 20;
-                this.def = 10;
-                this.level = 1;
-                this.xp = 0;
-                this.nextLevelXp = 100;
-                this.unlocks = new Set();
-                this.selectedAttack = 1;
-                this.shielding = false;
-                this.shieldStrength = 100;
-                this.shieldMax = 100;
-                this.shieldYield = 1.0;
-                this.shieldRadius = 40;
-                this.omniShield = false;
-                this.speedBuffEnd = 0;
-                this.invulnEnd = 0;
-                this.moving = false;
-                this.lastAnimTime = 0;
-            }
-            setUnlocks() {
-                let ul = PL_UNLOCKS[this.pl] || PL_UNLOCKS[16];
-                this.unlocks = new Set(ul);
-                for (let id in this.attacks) {
-                    this.attacks[id].unlocked = this.unlocks.has(parseInt(id));
-                }
-            }
-            update(dt) {
-                this.mana = Math.min(this.maxMana, this.mana + this.manaRegen * dt);
-                if (this.invulnEnd > Date.now()) {} else this.invulnEnd = 0;
-                let baseSpeed = 3;
-                if (this.speedBuffEnd > Date.now()) {
-                    baseSpeed *= 2;
-                    if (this.pl >= 12) this.invulnEnd = Date.now() + (this.speedBuffEnd - Date.now());
-                }
-                let speed = baseSpeed;
-                this.velX = 0;
-                this.velY = 0;
-                if (keys['w'] || keys['ArrowUp']) { this.velY -= speed; this.moving = true; }
-                if (keys['s'] || keys['ArrowDown']) { this.velY += speed; this.moving = true; }
-                if (keys['a'] || keys['ArrowLeft']) { this.velX -= speed; this.moving = true; }
-                if (keys['d'] || keys['ArrowRight']) { this.velX += speed; this.moving = true; }
-                let vel = Math.hypot(this.velX, this.velY);
-                if (vel > 0) {
-                    this.x += this.velX / vel * speed;
-                    this.y += this.velY / vel * speed;
-                } else {
-                    this.moving = false;
-                }
-                this.x = Math.max(0, Math.min(CW, this.x));
-                this.y = Math.max(0, Math.min(CH, this.y));
-                if (!this.shielding) {
-                    this.shieldStrength = Math.min(this.shieldMax, this.shieldStrength + 0.5 * dt);
-                }
-                if (this.pl === 16 && shake > 0) shake--;
-            }
-            draw(ctx, t) {
-                let ox = 0, oy = 0;
-                if (this.pl === 16 && shake > 0) {
-                    ox = (Math.random() - 0.5) * 5;
-                    oy = (Math.random() - 0.5) * 5;
-                }
-                ctx.save();
-                ctx.translate(ox, oy);
-                ctx.strokeStyle = 'blue';
-                ctx.lineWidth = 3;
-                // head
-                ctx.beginPath();
-                ctx.arc(this.x, this.y - 40, 8, 0, Math.PI * 2);
-                ctx.stroke();
-                // hat
-                ctx.fillStyle = 'purple';
-                ctx.beginPath();
-                ctx.moveTo(this.x - 10, this.y - 48);
-                ctx.lineTo(this.x + 10, this.y - 48);
-                ctx.lineTo(this.x, this.y - 60);
-                ctx.closePath();
-                ctx.fill();
-                // body
-                ctx.strokeStyle = 'blue';
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y - 32);
-                ctx.lineTo(this.x, this.y + 20);
-                ctx.stroke();
-                // arms sway only if moving
-                let armSway = 0;
-                if (this.moving) {
-                    armSway = Math.sin(t * 0.01) * 10;
-                }
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y - 20);
-                ctx.lineTo(this.x - 15 + armSway, this.y);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y - 20);
-                ctx.lineTo(this.x + 15 - armSway, this.y);
-                ctx.stroke();
-                // legs
-                let legSway = 0;
-                if (this.moving) {
-                    legSway = Math.sin(t * 0.01 + Math.PI) * 8;
-                }
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y + 20);
-                ctx.lineTo(this.x - 8 + legSway, this.y + 40);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y + 20);
-                ctx.lineTo(this.x + 8 - legSway, this.y + 40);
-                ctx.stroke();
-                // shield
-                if (this.shielding && this.shieldStrength > 0) {
-                    let rad = this.shieldRadius + (this.omniShield ? 20 : 0);
-                    ctx.strokeStyle = `rgba(0,255,0,0.5)`;
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, rad, 0, Math.PI * 2);
-                    ctx.stroke();
-                    let pulse = Math.sin(t * 0.02) * 5;
-                    ctx.lineWidth = 3 + pulse;
-                    ctx.stroke();
-                    ctx.lineWidth = 3;
-                }
-                ctx.restore();
-            }
-            fire() {
-                let id = this.selectedAttack;
-                let atk = this.attacks[id];
-                if (!atk.unlocked || Date.now() - atk.lastUse < atk.cd || this.mana < atk.mana) return;
-                this.mana -= atk.mana;
-                atk.lastUse = Date.now();
-                let dx = mouse.x - this.x;
-                let dy = mouse.y - this.y;
-                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                let dirX = dx / dist;
-                let dirY = dy / dist;
-                let potency = 1 + this.pl / 16;
-                let dmg = atk.damage * potency * this.atk / 20;
-                switch (atk.type) {
-                    case 'projectile':
-                    case 'spread':
-                    case 'cone':
-                        let count = atk.count || 1;
-                        let angleSpan = atk.angle || 0;
-                        for (let i = 0; i < count; i++) {
-                            let angle = (i - (count - 1) / 2) * angleSpan;
-                            let cosA = Math.cos(angle);
-                            let sinA = Math.sin(angle);
-                            let vx = (cosA * dirX - sinA * dirY) * atk.speed;
-                            let vy = (sinA * dirX + cosA * dirY) * atk.speed;
-                            let proj = {
-                                x: this.x, y: this.y, vx, vy, dmg, color: atk.color, size: atk.size || 5,
-                                owner: 'player', type: atk.name, homing: atk.homing * this.pl, bounces: atk.bounces,
-                                ignoreShield: atk.ignoreShield, reflect: atk.reflect, knockback: atk.knockback,
-                                effect: atk.effect, effectDur: atk.effectDur, effectVal: atk.effectVal,
-                                explode: atk.explode, explodeRad: atk.explodeRad, chains: atk.chains, chainRange: atk.chainRange,
-                                zigZag: false, dot: atk.dot, dotDur: atk.dotDur, dotDmg: atk.dotDmg * potency
-                            };
-                            if (atk.type === 'cone') {
-                                proj.knockback = atk.knockback;
-                            }
-                            projectiles.push(proj);
-                        }
-                        break;
-                    case 'beam':
-                        beams.push({
-                            startX: this.x, startY: this.y, endX: mouse.x, endY: mouse.y,
-                            dmg: dmg * (atk.duration / 1000) / 0.5, // rate
-                            color: atk.color, thickness: atk.thickness, duration: atk.duration,
-                            startTime: Date.now(), pierce: atk.pierce, stun: atk.stun,
-                            dot: atk.dot, dotDur: atk.dotDur, dotDmg: atk.dotDmg * potency
-                        });
-                        break;
-                    case 'aoe':
-                        let aoeX = this.x + dirX * 200;
-                        let aoeY = this.y + dirY * 200;
-                        enemies.forEach(e => {
-                            let edx = aoeX - e.x;
-                            let edy = aoeY - e.y;
-                            if (Math.sqrt(edx*edx + edy*edy) < atk.radius) {
-                                let breakAmt = atk.break + this.pl * 10;
-                                if (e.shield > 0) e.shield = Math.max(0, e.shield - breakAmt);
-                                else e.takeDamage(dmg, this);
-                                for (let k = 0; k < 5; k++) {
-                                    particles.push(new Particle(e.x, e.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, atk.color, 2));
-                                }
-                            }
-                        });
-                        break;
-                    case 'lightning':
-                        let target = enemies.reduce((closest, e) => {
-                            let d = Math.hypot(e.x - this.x, e.y - this.y);
-                            return d < (closest ? Math.hypot(closest.x - this.x, closest.y - this.y) : Infinity) ? e : closest;
-                        }, null);
-                        if (target) {
-                            let chains = atk.chains + (this.pl >= 4 ? 3 : 0);
-                            let bolt = { x: this.x, y: this.y, tx: target.x, ty: target.y, dmg, color: atk.color, chains, chainRange: atk.chainRange, zigZag: true, dot: this.pl >= 10 };
-                            this.drawLightning(bolt);
-                            target.takeDamage(dmg, this, { stun: 500, dot: bolt.dot ? { dur: 3000, dmg: 5 * potency } : null });
-                            // chain
-                            let chained = [target];
-                            for (let c = 0; c < chains; c++) {
-                                let next = enemies.find(e => !chained.includes(e) && Math.hypot(e.x - target.x, e.y - target.y) < bolt.chainRange);
-                                if (next) {
-                                    let cbolt = { x: target.x, y: target.y, tx: next.x, ty: next.y, dmg: dmg * 0.7, color: atk.color };
-                                    this.drawLightning(cbolt);
-                                    next.takeDamage(cbolt.dmg, this);
-                                    chained.push(next);
-                                    target = next;
-                                } else break;
-                            }
-                        }
-                        break;
-                    case 'buff':
-                        this.speedBuffEnd = Date.now() + atk.duration;
-                        if (this.pl >= 12) this.invulnEnd = Date.now() + atk.duration;
-                        break;
-                }
-                if (this.pl === 16) shake = 10;
-            }
-            drawLightning(bolt) {
-                ctx.strokeStyle = bolt.color;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(bolt.x, bolt.y);
-                let steps = 20;
-                for (let s = 1; s <= steps; s++) {
-                    let px = bolt.x + (bolt.tx - bolt.x) * (s / steps) + (Math.random() - 0.5) * 20;
-                    let py = bolt.y + (bolt.ty - bolt.y) * (s / steps) + (Math.random() - 0.5) * 20;
-                    ctx.lineTo(px, py);
-                }
-                ctx.stroke();
-            }
-            takeDamage(dmg, from = null, opts = {}) {
-                if (this.invulnEnd > Date.now()) return;
-                let actual = Math.max(1, dmg - this.def * (1 - this.pl * 0.05));
-                this.health = Math.max(0, this.health - actual);
-                for (let k = 0; k < 10; k++) {
-                    particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*5, (Math.random()-0.5)*5, 'red', 3));
-                }
-                if (opts.stun) { /* player no stun */ }
-                if (opts.dot && opts.dot.dur) { /* implement dot timer if needed */ }
-            }
+// Spell base class
+class Spell {
+  constructor(name, cd, cost, unlockAt = 1) {
+    this.name = name;
+    this.cooldown = cd;
+    this.maxCooldown = cd;
+    this.manaCost = cost;
+    this.unlocked = false;
+    this.locked = true;
+    this.unlockAt = unlockAt;
+  }
+  cast() {
+    if (this.locked) return;
+    if (this.cooldown > 0) return;
+    if (player.mana < this.manaCost) return;
+    // subtract mana
+    player.mana -= this.manaCost;
+    this.cooldown = this.maxCooldown;
+    this.fire();
+  }
+  fire() {
+    // to implement in subclass
+  }
+  update() {
+    if (this.cooldown > 0) {
+      this.cooldown -= 1;
+    }
+  }
+}
+
+// Specific spells
+class MagicShot extends Spell {
+  constructor() {
+    super('Magic Shot', 30, 5);
+    this.unlockAt = 1;
+    this.locked = false;
+    this.unlocked = true;
+  }
+  fire() {
+    // Basic orange orb
+    let angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+    let speed = 5 + player.PL * 0.2;
+    let vx = Math.cos(angle) * speed;
+    let vy = Math.sin(angle) * speed;
+    game.particles.push(new Projectile(player.x, player.y, vx, vy, 5, 'orange', player.ATK * (1 + player.PL/16)));
+  }
+}
+
+class TriShot extends Spell {
+  constructor() {
+    super('Tri-Shot', 60, 10);
+    this.unlockAt = 2;
+  }
+  fire() {
+    for (let offset of [-0.2, 0, 0.2]) {
+      let angle = Math.atan2(mouse.y - player.y, mouse.x - player.x) + offset;
+      let speed = 5;
+      let vx = Math.cos(angle) * speed;
+      let vy = Math.sin(angle) * speed;
+      game.particles.push(new Projectile(player.x, player.y, vx, vy, 5, 'lightblue', player.ATK * (1 + player.PL/16)));
+    }
+  }
+}
+
+class ForceWave extends Spell {
+  constructor() {
+    super('Force Wave', 120, 20);
+    this.unlockAt = 3;
+  }
+  fire() {
+    // create shockwave
+    game.particles.push(new Shockwave(player.x, player.y, player.PL));
+  }
+}
+
+// Projectile class
+class Projectile {
+  constructor(x, y, vx, vy, radius, color, damage) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.radius = radius;
+    this.color = color;
+    this.damage = damage;
+    this.fromEnemy = false;
+    this.alive = true;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    // remove if out of bounds
+    if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+      this.alive = false;
+    }
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.fillStyle = this.color;
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// Shockwave for ForceWave
+class Shockwave {
+  constructor(x, y, PL) {
+    this.x = x;
+    this.y = y;
+    this.radius = 10;
+    this.maxRadius = 150;
+    this.speed = 10;
+    this.color = 'cyan';
+    this.damage = player.ATK * (1 + PL/16) * 2;
+    this.alive = true;
+  }
+  update() {
+    if (this.radius < this.maxRadius) {
+      this.radius += this.speed;
+    } else {
+      this.alive = false;
+    }
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 4;
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+    ctx.stroke();
+  }
+}
+
+// Enemy class
+class Enemy {
+  constructor(x, y, PL, isBoss=false) {
+    this.x = x;
+    this.y = y;
+    this.radius = isBoss ? 30 : 15;
+    this.color = isBoss ? 'red' : 'gray';
+    this.PL = PL;
+    this.health = 50 + game.level*20;
+    this.speed = 1 + game.level * 0.2;
+    this.ATK = 10 + game.level * 5;
+    this.DEF = 5 + game.level * 2;
+    this.isBoss = isBoss;
+    this.alive = true;
+    this.cooldown = 0;
+    this.dodgeChance = Math.min(0.02 * this.PL, 0.3);
+  }
+  update() {
+    // Basic AI
+    if (!this.alive) return;
+    let dx = player.x - this.x;
+    let dy = player.y - this.y;
+    let dist = Math.hypot(dx, dy);
+    // Dodge or move
+    if (Math.random() < this.dodgeChance) {
+      // random dodge move
+      this.x += (Math.random() - 0.5) * 50;
+      this.y += (Math.random() - 0.5) * 50;
+    } else {
+      // chase player if far
+      if (dist > 30) {
+        this.x += (dx/dist) * this.speed;
+        this.y += (dy/dist) * this.speed;
+      } else {
+        // melee attack (not implemented)
+      }
+    }
+    // Cast spells
+    if (this.cooldown <= 0) {
+      // simple default: shoot basic projectile
+      let angle = Math.atan2(dy, dx);
+      let vx = Math.cos(angle) * 4;
+      let vy = Math.sin(angle) * 4;
+      let proj = new Projectile(this.x, this.y, vx, vy, 5, 'red', this.ATK);
+      proj.fromEnemy = true;
+      game.particles.push(proj);
+      this.cooldown = 100 - this.PL*2;
+    } else {
+      this.cooldown--;
+    }
+    // Boundaries
+    this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+    this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+    if (this.health <= 0) this.alive = false;
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.beginPath();
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 3;
+    // simple stick
+    ctx.moveTo(0, -this.radius);
+    ctx.lineTo(0, this.radius);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, -this.radius, 5, 0, Math.PI*2);
+    ctx.stroke();
+    // arms
+    ctx.beginPath();
+    ctx.moveTo(0, -this.radius+10);
+    ctx.lineTo(-10, 0);
+    ctx.moveTo(0, -this.radius+10);
+    ctx.lineTo(10, 0);
+    ctx.stroke();
+    // legs
+    ctx.beginPath();
+    ctx.moveTo(0, this.radius);
+    ctx.lineTo(-7, this.radius + 15);
+    ctx.moveTo(0, this.radius);
+    ctx.lineTo(7, this.radius + 15);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// Initialize spells and selection
+function initSpells() {
+  player.spells['Magic Shot'] = new MagicShot();
+  player.spells['Tri-Shot'] = new TriShot();
+  player.spells['Force Wave'] = new ForceWave();
+  player.spellOrder = ['Magic Shot', 'Tri-Shot', 'Force Wave'];
+  for (let name in player.spells) {
+    let spell = player.spells[name];
+    if (spell.unlockAt <= player.PL) {
+      spell.locked = false;
+      spell.unlocked = true;
+    }
+  }
+}
+initSpells();
+
+// Mouse and keyboard events
+canvas.addEventListener('mousemove', function(evt) {
+  let rect = canvas.getBoundingClientRect();
+  mouse.x = evt.clientX - rect.left;
+  mouse.y = evt.clientY - rect.top;
+});
+canvas.addEventListener('mousedown', function(evt) {
+  mouse.down = true;
+  player.shoot();
+});
+canvas.addEventListener('mouseup', function(evt) {
+  mouse.down = false;
+});
+window.addEventListener('keydown', function(evt) {
+  keysDown[evt.key] = true;
+  // cycle spells
+  if (evt.key === 'q') {
+    player.selectedSpellIndex = (player.selectedSpellIndex - 1 + player.spellOrder.length) % player.spellOrder.length;
+  }
+  if (evt.key === 'e') {
+    player.selectedSpellIndex = (player.selectedSpellIndex + 1) % player.spellOrder.length;
+  }
+});
+window.addEventListener('keyup', function(evt) {
+  keysDown[evt.key] = false;
+});
+
+// Game loop functions
+function update() {
+  if (game.state === 'play') {
+    player.move();
+    player.update();
+    for (let spellName in player.spells) {
+      player.spells[spellName].update();
+    }
+    // Update particles
+    for (let p of game.particles) {
+      p.update();
+      // Check collision with player if fromEnemy projectile
+      if (p.fromEnemy) {
+        let dx = p.x - player.x;
+        let dy = p.y - player.y;
+        if (Math.hypot(dx, dy) < p.radius + player.radius) {
+          let damage = p.damage - player.DEF * (1 - player.PL/100);
+          player.health -= Math.max(1, damage);
+          p.alive = false;
         }
-
-        class Enemy {
-            constructor(type, pl) {
-                this.x = Math.random() * CW;
-                this.y = Math.random() * CH;
-                this.type = type;
-                this.pl = Math.min(pl, 16);
-                this.health = 50 + wave * 20;
-                this.maxHealth = this.health;
-                this.speed = 1 + wave * 0.2;
-                this.atk = 10 + wave * 5;
-                this.def = 5 + wave * 2;
-                this.color = { Fire: 'red', Ice: 'cyan', Shadow: 'gray', Storm: 'yellow', Beast: 'brown' }[type] || 'gray';
-                this.shield = this.pl >= 4 ? 50 : 0;
-                this.shieldMax = this.shield;
-                this.lastAttack = 0;
-                this.lastDodge = 0;
-                this.dodgeChance = 0.02 * this.pl;
-                this.stunEnd = 0;
-                this.slowMult = 1;
-                this.slowEnd = 0;
-                this.dotDmg = 0;
-                this.dotEnd = 0;
-                this.sizeMult = 1;
-                this.moving = true;
-                this.lastAnimTime = 0;
-                if (wave % 5 === 0) {
-                    this.health *= 3;
-                    this.sizeMult = 1.5;
-                    this.color = 'darkred';
-                }
-                this.attacks = { ...ATTACKS };
-                // unlock based on pl
-                let unlockedIds = PL_UNLOCKS[this.pl] || PL_UNLOCKS[16];
-                unlockedIds.forEach(id => this.attacks[id].unlocked = true);
-                this.selectedAttack = unlockedIds[Math.floor(Math.random() * unlockedIds.length)];
+      }
+    }
+    game.particles = game.particles.filter(p => p.alive);
+    // Update enemies
+    for (let e of game.enemies) {
+      e.update();
+    }
+    game.enemies = game.enemies.filter(e => e.alive);
+    // Collisions (projectile - enemy)
+    for (let p of game.particles) {
+      if (!p.fromEnemy) {
+        for (let e of game.enemies) {
+          let dx = p.x - e.x;
+          let dy = p.y - e.y;
+          if (Math.hypot(dx, dy) < p.radius + e.radius) {
+            let damage = p.damage - e.DEF * (1 - player.PL/100);
+            e.health -= Math.max(1, damage);
+            p.alive = false;
+            if (e.health <= 0) {
+              e.alive = false;
+              game.xp += 20;
             }
-            draw(ctx, t) {
-                let ox = 0, oy = 0;
-                if (player.pl === 16 && shake > 0) {
-                    ox = (Math.random() - 0.5) * 3;
-                    oy = (Math.random() - 0.5) * 3;
-                }
-                ctx.save();
-                ctx.translate(ox, oy);
-                ctx.scale(this.sizeMult, this.sizeMult);
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = 3;
-                // head
-                ctx.beginPath();
-                ctx.arc(this.x, this.y - 40, 8, 0, Math.PI * 2);
-                ctx.stroke();
-                if (this.pl >= 8) {
-                    // crown
-                    ctx.fillStyle = 'gold';
-                    ctx.beginPath();
-                    ctx.moveTo(this.x - 10, this.y - 48);
-                    ctx.lineTo(this.x + 10, this.y - 48);
-                    ctx.lineTo(this.x, this.y - 55);
-                    ctx.closePath();
-                    ctx.fill();
-                }
-                // body
-                ctx.strokeStyle = this.color;
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y - 32);
-                ctx.lineTo(this.x, this.y + 20);
-                ctx.stroke();
-                // arms sway only if moving
-                let armSway = 0;
-                if (this.moving) {
-                    armSway = Math.sin(t * 0.005 + this.x * 0.01) * 10;
-                }
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y - 20);
-                ctx.lineTo(this.x - 15 + armSway, this.y);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y - 20);
-                ctx.lineTo(this.x + 15 - armSway, this.y);
-                ctx.stroke();
-                // legs
-                let legSway = 0;
-                if (this.moving) {
-                    legSway = Math.sin(t * 0.005 + this.y * 0.01 + Math.PI) * 8;
-                }
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y + 20);
-                ctx.lineTo(this.x - 8 + legSway, this.y + 40);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y + 20);
-                ctx.lineTo(this.x + 8 - legSway, this.y + 40);
-                ctx.stroke();
-                // shield
-                if (this.shield > 0) {
-                    ctx.strokeStyle = `rgba(255,255,255,0.5)`;
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, 30, 0, Math.PI * 2);
-                    ctx.stroke();
-                }
-                ctx.restore();
-            }
-            update(dt) {
-                if (this.stunEnd > Date.now()) return;
-                if (this.slowEnd > Date.now()) this.slowMult = 0.5; else this.slowMult = 1;
-                if (this.dotEnd > Date.now()) {
-                    this.health -= this.dotDmg / 60 * dt; // per frame
-                    if (this.health <= 0) this.die();
-                }
-                let dx = player.x - this.x;
-                let dy = player.y - this.y;
-                let dist = Math.hypot(dx, dy);
-                let dirX = dx / dist;
-                let dirY = dy / dist;
-                this.moving = true;
-                let flee = player.pl === 16 && Math.random() < 0.1;
-                if (flee) {
-                    dirX = -dirX;
-                    dirY = -dirY;
-                }
-                if (dist > 30) {
-                    let dodgeInterval = Math.max(1000 - this.pl * 50, 300);
-                    if (Date.now() - this.lastDodge > dodgeInterval && Math.random() < this.dodgeChance) {
-                        let sideX = -dirY * 60;
-                        let sideY = dirX * 60;
-                        if (Math.random() < 0.5) {
-                            sideX = -sideX;
-                            sideY = -sideY;
-                        }
-                        this.x += sideX;
-                        this.y += sideY;
-                        this.lastDodge = Date.now();
-                        // dash particles
-                        for (let k = 0; k < 10; k++) {
-                            let frac = k / 10;
-                            let px = this.x - sideX * frac;
-                            let py = this.y - sideY * frac;
-                            let pvx = (Math.random() - 0.5) * 5;
-                            let pvy = (Math.random() - 0.5) * 5;
-                            particles.push(new Particle(px, py, pvx, pvy, this.color, 2));
-                        }
-                    } else {
-                        let moveSpeed = this.speed * this.slowMult;
-                        this.x += dirX * moveSpeed;
-                        this.y += dirY * moveSpeed;
-                    }
-                } else {
-                    player.takeDamage(this.atk, this);
-                    this.moving = false;
-                }
-                if (Date.now() - this.lastAttack > Math.max(2000 - this.pl * 100, 500)) {
-                    this.fire();
-                    this.lastAttack = Date.now();
-                }
-                this.x = Math.max(0, Math.min(CW, this.x));
-                this.y = Math.max(0, Math.min(CH, this.y));
-            }
-            fire() {
-                let id = this.selectedAttack;
-                let atk = this.attacks[id];
-                if (!atk.unlocked || Date.now() - atk.lastUse < atk.cd) return;
-                atk.lastUse = Date.now();
-                let dx = player.x - this.x;
-                let dy = player.y - this.y;
-                let dist = Math.hypot(dx, dy) || 1;
-                let dirX = dx / dist;
-                let dirY = dy / dist;
-                let potency = 1 + this.pl / 16;
-                let dmg = atk.damage * potency * this.atk / 10;
-                // simplified fire for enemy
-                let proj = {
-                    x: this.x, y: this.y,
-                    vx: dirX * (atk.speed || 5), vy: dirY * (atk.speed || 5),
-                    dmg, color: atk.color || this.color, size: atk.size || 5,
-                    owner: 'enemy', type: atk.name, homing: atk.homing || 0,
-                    pierce: atk.pierce || false, ignoreShield: atk.ignoreShield || false
-                };
-                projectiles.push(proj);
-            }
-            takeDamage(dmg, from, opts = {}) {
-                let actual = Math.max(1, dmg - this.def);
-                if (this.shield > 0) {
-                    this.shield -= actual * (from && from.attacks[12] ? 2 : 1);
-                    if (this.shield <= 0) this.shield = 0;
-                } else {
-                    this.health -= actual;
-                }
-                if (opts.stun) this.stunEnd = Date.now() + opts.stun;
-                if (opts.effect === 'slow') {
-                    this.slowEnd = Date.now() + opts.effectDur;
-                }
-                if (opts.dot) {
-                    this.dotDmg = opts.dot.dmg;
-                    this.dotEnd = Date.now() + opts.dot.dur;
-                }
-                if (opts.knockback) {
-                    let kdx = this.x - from.x;
-                    let kdy = this.y - from.y;
-                    let kdist = Math.hypot(kdx, kdy) || 1;
-                    this.x += (kdx / kdist) * opts.knockback;
-                    this.y += (kdy / kdist) * opts.knockback;
-                }
-                for (let k = 0; k < 5; k++) {
-                    particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*8, (Math.random()-0.5)*8, 'yellow', 2));
-                }
-                if (this.health <= 0) this.die();
-            }
-            die() {
-                player.xp += 10 * this.pl;
-                kills++;
-                for (let k = 0; k < 20; k++) {
-                    particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, this.color, 4));
-                }
-                enemies = enemies.filter(e => e !== this);
-            }
+          }
         }
+      }
+    }
+    // Spawn new wave if enemies cleared
+    if (game.enemies.length === 0) {
+      game.wave++;
+      spawnWave();
+    }
+  }
+}
 
-        class Particle {
-            constructor(x, y, vx, vy, color, size) {
-                this.x = x;
-                this.y = y;
-                this.vx = vx;
-                this.vy = vy;
-                this.color = color;
-                this.size = size;
-                this.life = 1.0;
-                this.decay = 0.02;
-            }
-            update(dt) {
-                this.x += this.vx * dt / 16;
-                this.y += this.vy * dt / 16;
-                this.vy += 0.2 * dt / 16; // gravity
-                this.life -= this.decay * dt / 16;
-            }
-            draw(ctx) {
-                ctx.globalAlpha = this.life;
-                ctx.fillStyle = this.color;
-                ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
-                ctx.globalAlpha = 1;
-            }
-        }
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (game.state === 'play') {
+    player.draw();
+    for (let p of game.particles) {
+      p.draw();
+    }
+    for (let e of game.enemies) {
+      e.draw();
+    }
+    // UI
+    document.getElementById('ui').innerHTML = 'HP: ' + Math.floor(player.health) + ' / ' + player.maxHealth + '<br>'
+      + 'Mana: ' + Math.floor(player.mana) + ' / ' + player.maxMana + '<br>'
+      + 'PL: ' + player.PL + '<br>'
+      + 'ATK: ' + player.ATK + '<br>'
+      + 'DEF: ' + player.DEF + '<br>'
+      + 'Wave: ' + game.wave + '<br>'
+      + 'XP: ' + game.xp + ' / ' + game.nextLevelXP;
+    // Spell list
+    let spellListHtml = '<ul style="list-style: none; padding: 0; margin: 0;">';
+    player.spellOrder.forEach((name, index) => {
+      let spell = player.spells[name];
+      let color = index === player.selectedSpellIndex ? 'yellow' : 'white';
+      let status = spell.unlocked ? '' : '(LOCKED)';
+      spellListHtml += '<li style="color:' + color + '">' + name + ' ' + status + '</li>';
+    });
+    spellListHtml += '</ul>';
+    document.getElementById('spellList').innerHTML = spellListHtml;
+  }
+}
 
-        function drawProjectile(p) {
-            ctx.fillStyle = p.color;
-            if (p.type === 'Ice Shard') {
-                // triangle
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                let angle = Math.atan2(p.vy, p.vx);
-                ctx.rotate(angle);
-                ctx.beginPath();
-                ctx.moveTo(0, -p.size * 1.5);
-                ctx.lineTo(p.size, p.size * 0.5);
-                ctx.lineTo(-p.size, p.size * 0.5);
-                ctx.closePath();
-                ctx.fill();
-                ctx.restore();
-            } else if (p.type === 'Homing Missile') {
-                // rocket
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                let angle = Math.atan2(p.vy, p.vx);
-                ctx.rotate(angle);
-                ctx.fillRect(-p.size / 2, -p.size, p.size, p.size * 1.5);
-                // flame trail
-                ctx.fillStyle = 'orange';
-                ctx.fillRect(-p.size / 2, p.size * 0.5, p.size, p.size);
-                ctx.restore();
-                ctx.fillStyle = p.color;
-            } else if (p.type === 'Recursive Shot') {
-                // star-ish
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                ctx.rotate(gameTime * 0.1);
-                ctx.beginPath();
-                for (let i = 0; i < 5; i++) {
-                    let ang = (i / 5) * Math.PI * 2;
-                    let r = p.size * (i % 2 ? 1 : 0.5);
-                    ctx.lineTo(Math.cos(ang) * r, Math.sin(ang) * r);
-                }
-                ctx.closePath();
-                ctx.fill();
-                ctx.restore();
-            } else {
-                // default orb
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            // trail
-            ctx.globalAlpha = 0.5;
-            ctx.beginPath();
-            ctx.arc(p.x - p.vx * 0.3, p.y - p.vy * 0.3, p.size * 0.7, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
+function spawnWave() {
+  let count = Math.min(6, Math.floor(game.wave / 3) + 1);
+  for (let i = 0; i < count; i++) {
+    let angle = Math.random() * Math.PI*2;
+    let dist = 200;
+    let ex = player.x + Math.cos(angle)*dist;
+    let ey = player.y + Math.sin(angle)*dist;
+    let newEnemy = new Enemy(ex, ey, Math.floor(game.wave/2));
+    game.enemies.push(newEnemy);
+  }
+}
 
-        function updateProjectiles() {
-            for (let i = projectiles.length - 1; i >= 0; i--) {
-                let p = projectiles[i];
-                // homing
-                if (p.homing > 0) {
-                    let target = p.owner === 'player' ? enemies[0] : player;
-                    if (target) {
-                        let tdx = target.x - p.x;
-                        let tdy = target.y - p.y;
-                        let tdist = Math.hypot(tdx, tdy) || 1;
-                        p.vx += (tdx / tdist) * p.homing;
-                        p.vy += (tdy / tdist) * p.homing;
-                        let pspeed = Math.hypot(p.vx, p.vy);
-                        if (pspeed > 0) {
-                            p.vx = p.vx / pspeed * (p.speed || 5);
-                            p.vy = p.vy / pspeed * (p.speed || 5);
-                        }
-                    }
-                }
-                p.x += p.vx;
-                p.y += p.vy;
-                // draw
-                drawProjectile(p);
-                // collisions
-                let hit = false;
-                if (p.owner === 'player') {
-                    for (let j = enemies.length - 1; j >= 0; j--) {
-                        let e = enemies[j];
-                        let edx = p.x - e.x;
-                        let edy = p.y - e.y;
-                        if (Math.hypot(edx, edy) < e.sizeMult * 15 + p.size) {
-                            let opts = { effect: p.effect, effectDur: p.effectDur, knockback: p.knockback, dot: p.dot ? { dur: p.dotDur, dmg: p.dotDmg } : null, stun: p.type === 'Beam Shot' && player.pl >= 8 ? 1000 : 0 };
-                            if (p.ignoreShield || e.shield <= 0) {
-                                e.takeDamage(p.dmg, player, opts);
-                            } else {
-                                e.shield -= p.dmg;
-                            }
-                            if (p.explode && player.pl >= 6) {
-                                enemies.forEach(ee => {
-                                    if (ee !== e && Math.hypot(ee.x - e.x, ee.y - e.y) < p.explodeRad) {
-                                        ee.takeDamage(p.dmg * 0.5, player);
-                                    }
-                                });
-                            }
-                            if (p.bounces > 0) {
-                                p.vx = -p.vx * 0.8;
-                                p.vy = -p.vy * 0.8;
-                                p.bounces--;
-                                p.x += p.vx;
-                                p.y += p.vy;
-                            } else if (!p.pierce) {
-                                projectiles.splice(i, 1);
-                                hit = true;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    if (player.shielding && player.shieldStrength > 0 && Math.hypot(p.x - player.x, p.y - player.y) < player.shieldRadius) {
-                        player.shieldStrength -= p.dmg * player.shieldYield;
-                        player.mana -= p.dmg * player.shieldYield;
-                        if (player.shieldStrength <= 0) player.shielding = false;
-                        for (let k = 0; k < 5; k++) {
-                            particles.push(new Particle(p.x, p.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, 'green', 3));
-                        }
-                        projectiles.splice(i, 1);
-                        continue;
-                    }
-                    if (p.reflect && player.shielding) {
-                        p.vx = -p.vx;
-                        p.vy = -p.vy;
-                        p.owner = 'player';
-                        continue;
-                    }
-                    let pdx = p.x - player.x;
-                    let pdy = p.y - player.y;
-                    if (Math.hypot(pdx, pdy) < 15 + p.size && !(player.invulnEnd > Date.now())) {
-                        player.takeDamage(p.dmg);
-                        projectiles.splice(i, 1);
-                        hit = true;
-                    }
-                }
-                // out of bounds
-                if (p.x < 0 || p.x > CW || p.y < 0 || p.y > CH) {
-                    if (p.bounces > 0) {
-                        if (p.x < 0 || p.x > CW) p.vx = -p.vx;
-                        if (p.y < 0 || p.y > CH) p.vy = -p.vy;
-                        p.x = Math.max(0, Math.min(CW, p.x));
-                        p.y = Math.max(0, Math.min(CH, p.y));
-                        p.bounces--;
-                    } else {
-                        projectiles.splice(i, 1);
-                    }
-                }
-                if (!hit && (p.x < -50 || p.x > CW + 50 || p.y < -50 || p.y > CH + 50)) {
-                    projectiles.splice(i, 1);
-                }
-            }
-            // proj-proj collision for reflect
-            for (let ii = projectiles.length - 1; ii >= 0; ii--) {
-                for (let jj = ii + 1; jj < projectiles.length; jj++) {
-                    let p1 = projectiles[ii];
-                    let p2 = projectiles[jj];
-                    if (p1.owner !== p2.owner && (p1.reflect || p2.reflect)) {
-                        let pdx = p1.x - p2.x;
-                        let pdy = p1.y - p2.y;
-                        if (Math.hypot(pdx, pdy) < p1.size + p2.size) {
-                            if (p1.reflect) {
-                                p2.vx = -p2.vx;
-                                p2.vy = -p2.vy;
-                                p2.owner = p1.owner;
-                            } else {
-                                p1.vx = -p1.vx;
-                                p1.vy = -p1.vy;
-                                p1.owner = p2.owner;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
 
-        function updateBeams() {
-            for (let i = beams.length - 1; i >= 0; i--) {
-                let b = beams[i];
-                let elapsed = Date.now() - b.startTime;
-                if (elapsed > b.duration) {
-                    beams.splice(i, 1);
-                    continue;
-                }
-                // draw
-                ctx.strokeStyle = b.color;
-                ctx.lineWidth = b.thickness;
-                ctx.beginPath();
-                ctx.moveTo(b.startX, b.startY);
-                ctx.lineTo(b.endX, b.endY);
-                ctx.stroke();
-                // glow
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = b.color;
-                ctx.stroke();
-                ctx.shadowBlur = 0;
-                // damage
-                let rate = b.dmg / (b.duration / 16);
-                enemies.forEach(e => {
-                    let ex = e.x - b.startX;
-                    let ey = e.y - b.startY;
-                    let len = Math.hypot(b.endX - b.startX, b.endY - b.startY);
-                    let proj = (ex * (b.endX - b.startX) + ey * (b.endY - b.startY)) / (len * len);
-                    let closestX = b.startX + proj * (b.endX - b.startX);
-                    let closestY = b.startY + proj * (b.endY - b.startY);
-                    if (Math.hypot(e.x - closestX, e.y - closestY) < 20 && proj >= 0 && proj <= 1) {
-                        let opts = { stun: b.stun, dot: b.dot ? { dur: b.dotDur, dmg: b.dotDmg } : null };
-                        e.takeDamage(rate, player, opts);
-                    }
-                });
-            }
-        }
-
-        function updateParticles(dt) {
-            for (let i = particles.length - 1; i >= 0; i--) {
-                particles[i].update(dt);
-                if (particles[i].life <= 0) particles.splice(i, 1);
-            }
-        }
-
-        function drawUI() {
-            ctx.fillStyle = 'white';
-            ctx.font = '16px Arial';
-            ctx.fillText(`Health: ${Math.floor(player.health)}/${player.maxHealth}`, 10, 20);
-            ctx.fillText(`Mana: ${Math.floor(player.mana)}/${player.maxMana}`, 10, 40);
-            ctx.fillText(`PL: ${player.pl}`, 10, 60);
-            ctx.fillText(`ATK: ${player.atk} DEF: ${player.def}`, 10, 80);
-            ctx.fillText(`Level: ${player.level} XP: ${player.xp}/${player.nextLevelXp}`, 10, 100);
-            ctx.fillText(`Wave: ${wave} Kills: ${kills}`, 10, 120);
-            // spells
-            ctx.fillText('Spells:', 620, 20);
-            let sy = 40;
-            for (let id in player.attacks) {
-                let a = player.attacks[id];
-                if (a.unlocked) {
-                    ctx.fillStyle = id == player.selectedAttack ? 'lime' : 'white';
-                    let cd = a.cd ? Math.max(0, (a.cd - (Date.now() - a.lastUse)) / 1000) : 0;
-                    let text = `${id}: ${a.name}${cd > 0 ? ` [${cd.toFixed(1)}s]` : ''}`;
-                    ctx.fillText(text, 620, sy);
-                    sy += 20;
-                }
-                if (sy > 550) break;
-            }
-            ctx.fillStyle = 'white';
-            ctx.fillText('Controls: WASD/Arrows Move, Mouse Aim/Fire, SPACE Shield, , Cycle', 10, 580);
-        }
-
-        function drawMenu() {
-            ctx.fillStyle = 'white';
-            ctx.font = '32px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText("Alternate's Magical Evolution", CX, 200);
-            ctx.font = '20px Arial';
-            ctx.fillText('Press P to Play', CX, 250);
-            ctx.fillText('Press A for Attributes', CX, 280);
-            ctx.textAlign = 'left';
-        }
-
-        function drawAttributes() {
-            ctx.fillStyle = 'white';
-            ctx.font = '24px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Attributes', CX, 50);
-            ctx.font = '16px Arial';
-            let ay = 80;
-            ctx.fillText(`Power Level: ${player.pl}/16`, CX, ay); ay += 25;
-            ctx.fillText(`Attack: ${player.atk}`, CX, ay); ay += 25;
-            ctx.fillText(`Defense: ${player.def}`, CX, ay); ay += 25;
-            ctx.fillText(`Level: ${player.level}`, CX, ay); ay += 25;
-            ctx.fillText(`Unlocked Spells: ${player.unlocks.size}/14`, CX, ay); ay += 25;
-            ctx.fillText('Press ESC to return', CX, CH - 50);
-            ctx.textAlign = 'left';
-            // list unlocks
-            ay = 150;
-            ctx.textAlign = 'left';
-            for (let id of [...player.unlocks].sort((a,b)=>a-b)) {
-                ctx.fillText(`${id}: ${player.attacks[id].name}`, 300, ay);
-                ay += 20;
-            }
-            ctx.textAlign = 'left';
-        }
-
-        function generateUpgrades() {
-            let pool = [];
-            let buffPool = [];
-            for (let id of player.unlocks) {
-                let a = player.attacks[id];
-                buffPool.push({ type: 'buff', id: id, text: `+10 DMG to ${a.name}` });
-                buffPool.push({ type: 'buff', id: id, text: `-50ms CD to ${a.name}` });
-            }
-            let statPool = [
-                { type: 'stat', what: 'atk', val: 2, text: '+2 ATK' },
-                { type: 'stat', what: 'def', val: 2, text: '+2 DEF' },
-                { type: 'stat', what: 'pl', val: 1, text: '+1 PL (if <16)' },
-                { type: 'shield', what: 'yield', val: -0.1, text: 'Shield Yield -0.1' },
-                { type: 'shield', what: 'omni', text: 'Omni Shield (+20 rad)' }
-            ];
-            // random 3 from buffs and stats
-            while (pool.length < 3) {
-                let isBuff = Math.random() < 0.6;
-                let choicePool = isBuff ? buffPool : statPool;
-                if (choicePool.length === 0) choicePool = buffPool;
-                if (choicePool.length > 0) {
-                    let idx = Math.floor(Math.random() * choicePool.length);
-                    pool.push(choicePool.splice(idx, 1)[0]);
-                }
-            }
-            upgrades = pool;
-        }
-
-        function drawLevelUp() {
-            ctx.fillStyle = 'white';
-            ctx.font = '32px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Level Up!', CX, 150);
-            ctx.font = '20px Arial';
-            let uy = 200;
-            upgrades.forEach((up, idx) => {
-                ctx.fillText(`${idx + 1}: ${up.text}`, CX, uy);
-                uy += 40;
-            });
-            ctx.fillText('Press 1-3 to choose', CX, uy + 20);
-            ctx.textAlign = 'left';
-        }
-
-        function applyUpgrade(up) {
-            switch (up.type) {
-                case 'buff':
-                    let a = player.attacks[up.id];
-                    if (up.text.includes('DMG')) a.damage += 10;
-                    else a.cd = Math.max(50, a.cd - 50);
-                    break;
-                case 'stat':
-                    if (up.what === 'atk') player.atk += up.val;
-                    if (up.what === 'def') player.def += up.val;
-                    if (up.what === 'pl' && player.pl < 16) {
-                        player.pl += up.val;
-                        player.setUnlocks();
-                    }
-                    break;
-                case 'shield':
-                    if (up.what === 'yield') player.shieldYield = Math.max(0.1, player.shieldYield + up.val);
-                    else {
-                        player.omniShield = true;
-                        player.shieldRadius += 20;
-                    }
-                    break;
-            }
-        }
-
-        function spawnWave() {
-            enemies = [];
-            let num = Math.min(1 + Math.floor((wave - 1) / 3), 6);
-            for (let i = 0; i < num; i++) {
-                let type = ['Fire', 'Ice', 'Shadow', 'Storm', 'Beast'][Math.floor(Math.random() * 5)];
-                let pl = Math.floor(wave / 2);
-                enemies.push(new Enemy(type, pl));
-            }
-            if (wave % 5 === 0) {
-                enemies.push(new Enemy('Boss', player.pl + 1));
-            }
-        }
-
-        function checkLevelUp() {
-            while (player.xp >= player.nextLevelXp) {
-                player.xp -= player.nextLevelXp;
-                player.nextLevelXp = Math.floor(player.nextLevelXp * 1.5);
-                player.level++;
-                if (player.level % 4 === 0 && player.pl < 16) {
-                    player.pl++;
-                    player.setUnlocks();
-                }
-                if (player.pl === 16) player.maxHealth += 50;
-                generateUpgrades();
-                gameState = 'levelup';
-                return true; // leveled
-            }
-            return false;
-        }
-
-        function checkWaveClear() {
-            if (enemies.length === 0 && gameState === 'playing') {
-                player.xp += 100 * wave;
-                wave++;
-                let leveled = checkLevelUp();
-                if (!leveled) {
-                    gameState = 'playing';
-                    spawnWave();
-                }
-            }
-        }
-
-        function loadGame() {
-            let save = localStorage.getItem('alternateSave');
-            if (save) {
-                let data = JSON.parse(save);
-                player = new Player();
-                player.health = data.health || 100;
-                player.mana = data.mana || 100;
-                player.pl = Math.min(data.pl || 1, 16);
-                player.atk = data.atk || 20;
-                player.def = data.def || 10;
-                player.level = data.level || 1;
-                player.xp = data.xp || 0;
-                player.nextLevelXp = data.nextLevelXp || 100;
-                player.shieldYield = data.shieldYield || 1.0;
-                player.omniShield = data.omniShield || false;
-                player.shieldRadius = 40 + (player.omniShield ? 20 : 0);
-                player.setUnlocks(); // enforce PL based
-                wave = data.wave || 1;
-                kills = data.kills || 0;
-                spawnWave();
-                gameState = 'playing';
-            } else {
-                player = new Player();
-            }
-        }
-
-        function saveGame() {
-            let data = {
-                health: player.health,
-                mana: player.mana,
-                pl: player.pl,
-                atk: player.atk,
-                def: player.def,
-                level: player.level,
-                xp: player.xp,
-                nextLevelXp: player.nextLevelXp,
-                shieldYield: player.shieldYield,
-                omniShield: player.omniShield,
-                wave: wave,
-                kills: kills
-            };
-            localStorage.setItem('alternateSave', JSON.stringify(data));
-        }
-
-        // Events
-        document.addEventListener('keydown', e => {
-            keys[e.key] = true;
-            if (e.key === ' ') {
-                e.preventDefault();
-                if (gameState === 'playing') player.shielding = true;
-            }
-            if (e.key === ',') {
-                let ids = [...player.unlocks].sort((a,b)=>a-b);
-                let currIdx = ids.indexOf(player.selectedAttack);
-                player.selectedAttack = ids[(currIdx + 1) % ids.length] || 1;
-            }
-            if (e.key >= '1' && e.key <= '9') {
-                let id = parseInt(e.key);
-                if (player.attacks[id] && player.attacks[id].unlocked) player.selectedAttack = id;
-                if (gameState === 'levelup') {
-                    let choice = id - 1;
-                    if (upgrades[choice]) {
-                        applyUpgrade(upgrades[choice]);
-                        if (!checkLevelUp()) {
-                            gameState = 'playing';
-                            spawnWave();
-                        }
-                    }
-                }
-            }
-            if (e.key.toLowerCase() === 'c') {
-                let id = 10;
-                if (player.attacks[id] && player.attacks[id].unlocked) player.selectedAttack = id;
-            }
-            if (e.key.toLowerCase() === 'v') {
-                let id = 11;
-                if (player.attacks[id] && player.attacks[id].unlocked) player.selectedAttack = id;
-            }
-            if (e.key.toLowerCase() === 'b') {
-                let id = 12;
-                if (player.attacks[id] && player.attacks[id].unlocked) player.selectedAttack = id;
-            }
-            if (e.key.toLowerCase() === 'n') {
-                let id = 13;
-                if (player.attacks[id] && player.attacks[id].unlocked) player.selectedAttack = id;
-            }
-            if (e.key.toLowerCase() === 'm') {
-                let id = 14;
-                if (player.attacks[id] && player.attacks[id].unlocked) player.selectedAttack = id;
-            }
-            if (gameState === 'menu') {
-                if (e.key.toLowerCase() === 'p') {
-                    localStorage.removeItem('alternateSave');
-                    loadGame();
-                } else if (e.key.toLowerCase() === 'a') {
-                    gameState = 'attributes';
-                }
-            } else if (gameState === 'attributes' && e.key === 'Escape') {
-                gameState = 'menu';
-            } else if (gameState === 'gameover' && e.key.toLowerCase() === 'r') {
-                localStorage.removeItem('alternateSave');
-                gameState = 'menu';
-            }
-        });
-        document.addEventListener('keyup', e => {
-            keys[e.key] = false;
-            if (e.key === ' ') {
-                if (gameState === 'playing') player.shielding = false;
-            }
-        });
-        canvas.addEventListener('mousemove', e => {
-            let rect = canvas.getBoundingClientRect();
-            mouse.x = e.clientX - rect.left;
-            mouse.y = e.clientY - rect.top;
-        });
-        canvas.addEventListener('mousedown', e => {
-            mouse.down = true;
-            if (gameState === 'playing') player.fire();
-        });
-        canvas.addEventListener('mouseup', () => mouse.down = false);
-
-        // Init
-        loadGame();
-        function loop() {
-            let dt = 16;
-            gameTime += dt;
-            ctx.clearRect(0, 0, CW, CH);
-            ctx.fillStyle = 'black';
-            ctx.fillRect(0, 0, CW, CH);
-            if (gameState === 'menu') {
-                drawMenu();
-            } else if (gameState === 'attributes') {
-                drawAttributes();
-            } else if (gameState === 'levelup') {
-                drawLevelUp();
-            } else if (gameState === 'playing') {
-                player.update(dt);
-                enemies.forEach(e => e.update(dt));
-                updateProjectiles();
-                updateBeams();
-                updateParticles(dt);
-                if (player.health <= 0) {
-                    gameState = 'gameover';
-                }
-                checkWaveClear();
-                player.draw(ctx, gameTime);
-                enemies.forEach(e => e.draw(ctx, gameTime));
-                particles.forEach(p => p.draw(ctx));
-                drawUI();
-                // aim line
-                ctx.strokeStyle = 'gray';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(player.x, player.y);
-                ctx.lineTo(mouse.x, mouse.y);
-                ctx.stroke();
-            } else if (gameState === 'gameover') {
-                ctx.fillStyle = 'white';
-                ctx.font = '32px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('Game Over', CX, CY);
-                ctx.font = '20px Arial';
-                ctx.fillText(`Survived ${wave - 1} waves, ${kills} kills`, CX, CY + 40);
-                ctx.fillText('Press R to Restart', CX, CY + 80);
-                ctx.textAlign = 'left';
-            }
-            if (gameState === 'playing') saveGame();
-            requestAnimationFrame(loop);
-        }
-        loop();
-    </script>
+game.state = 'play';
+gameLoop();
+</script>
 </body>
 </html>
