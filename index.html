@@ -2,947 +2,1009 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alternate's Magical Evolution</title>
     <style>
-        body { margin: 0; padding: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif; }
-        canvas { border: 1px solid #333; background: black; }
-        #ui { position: absolute; top: 10px; left: 10px; color: white; font-size: 12px; }
-        #spellList { position: absolute; top: 10px; right: 10px; color: white; font-size: 10px; max-height: 400px; overflow-y: auto; }
-        #controls { position: absolute; bottom: 10px; left: 10px; color: white; font-size: 10px; }
-        #menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; }
-        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        body { margin: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif; color: white; }
+        canvas { border: 1px solid white; background: black; }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="ui"></div>
-    <div id="spellList"></div>
-    <div id="controls">WASD/Arrows: Move | Mouse: Aim/Fire | , : Cycle Spell | Space: Shield</div>
-    <div id="menu">
-        <h1>Alternate's Magical Evolution</h1>
-        <button onclick="startGame()">Play</button>
-        <button onclick="viewAttributes()">Attributes</button>
-    </div>
-
+    <canvas id="canvas" width="800" height="600"></canvas>
     <script>
-        const canvas = document.getElementById('gameCanvas');
+        const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const ui = document.getElementById('ui');
-        const spellList = document.getElementById('spellList');
-        const menu = document.getElementById('menu');
+        const GAME_WIDTH = 800;
+        const GAME_HEIGHT = 600;
 
-        // Game state
-        let gameState = 'menu'; // menu, playing, paused, gameOver
-        let player = null;
-        let enemies = [];
-        let projectiles = [];
-        let particles = [];
-        let currentWave = 0;
-        let enemiesInWave = 0;
-        let level = 1;
-        let xp = 0;
-        let xpToNext = 100;
-        let keys = {};
-        let mouse = { x: 0, y: 0, down: false };
-        let selectedSpell = 0;
-        let lastTime = 0;
-        let animationFrame = 0;
-
-        // Save data
-        let saveData = {
-            pl: 1,
-            atk: 20,
-            def: 10,
-            unlocks: [0], // 0: Magic Shot
-            upgrades: {}
-        };
-
-        // Load save
-        function loadSave() {
-            const saved = localStorage.getItem('alternateSave');
-            if (saved) {
-                saveData = JSON.parse(saved);
+        class Vector {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
             }
-            player.pl = saveData.pl;
-            player.atk = saveData.atk;
-            player.def = saveData.def;
-            player.unlocks = saveData.unlocks;
+            add(v) { return new Vector(this.x + v.x, this.y + v.y); }
+            sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
+            mul(s) { return new Vector(this.x * s, this.y * s); }
+            dot(v) { return this.x * v.x + this.y * v.y; }
+            mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+            norm() {
+                const m = this.mag();
+                return m > 0 ? this.mul(1 / m) : new Vector(0, 0);
+            }
         }
 
-        // Save game
-        function saveGame() {
-            saveData.pl = player.pl;
-            saveData.atk = player.atk;
-            saveData.def = player.def;
-            saveData.unlocks = player.unlocks;
-            localStorage.setItem('alternateSave', JSON.stringify(saveData));
-        }
-
-        // Spells data
-        const spells = [
-            { name: 'Magic Shot', cd: 500, mana: 5, dmg: 20, unlocked: true, func: magicShot, color: 'orange' },
-            { name: 'Tri-Shot', cd: 800, mana: 10, dmg: 15, unlocked: false, func: triShot, color: 'blue' },
-            { name: 'Beam Shot', cd: 1500, mana: 20, dmg: 40, unlocked: false, func: beamShot, color: 'white' },
-            { name: 'Ice Shard', cd: 1000, mana: 15, dmg: 25, unlocked: false, func: iceShard, color: 'cyan' },
-            { name: 'Lightning', cd: 1200, mana: 18, dmg: 30, unlocked: false, func: lightning, color: 'yellow' },
-            { name: 'Curve Shot', cd: 700, mana: 8, dmg: 22, unlocked: false, func: curveShot, color: 'green' },
-            { name: 'Shield Breaker', cd: 2000, mana: 25, dmg: 10, unlocked: false, func: shieldBreaker, color: 'purple' },
-            { name: 'Homing Missile', cd: 1500, mana: 22, dmg: 35, unlocked: false, func: homingMissile, color: 'red' },
-            { name: 'Force Wave', cd: 1800, mana: 30, dmg: 28, unlocked: false, func: forceWave, color: 'blue' },
-            { name: 'Penta Shot', cd: 600, mana: 12, dmg: 12, unlocked: false, func: pentaShot, color: 'lightblue' },
-            { name: 'Recursive Shot', cd: 2500, mana: 35, dmg: 45, unlocked: false, func: recursiveShot, color: 'pink' },
-            { name: 'Shield Attack', cd: 2200, mana: 28, dmg: 40, unlocked: false, func: shieldAttack, color: 'gold' },
-            { name: 'Beta Laser', cd: 3000, mana: 50, dmg: 60, unlocked: false, func: betaLaser, color: 'crimson' },
-            { name: 'Super Speed', cd: 10000, mana: 40, dmg: 0, unlocked: false, func: superSpeed, color: 'silver' }
-        ];
-
-        // Player class
-        class Player {
-            constructor() {
-                this.x = 400;
-                this.y = 300;
+        class Entity {
+            constructor(x, y, color, size = 10) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector(0, 0);
+                this.color = color;
+                this.size = size;
                 this.health = 100;
                 this.maxHealth = 100;
-                this.mana = 100;
-                this.maxMana = 100;
                 this.speed = 3;
+                this.atk = 20;
+                this.def = 10;
+                this.pl = 1;
+                this.debuffs = [];
+                this.owner = null; // for projs
+            }
+            update(dt) {
+                this.pos = this.pos.add(this.vel.mul(dt));
+                // Clamp bounds
+                this.pos.x = Math.max(0, Math.min(GAME_WIDTH, this.pos.x));
+                this.pos.y = Math.max(0, Math.min(GAME_HEIGHT, this.pos.y));
+                // Debuffs
+                this.debuffs = this.debuffs.filter(d => {
+                    d.duration -= dt;
+                    if (d.type === 'dot') this.health -= d.dotValue * dt;
+                    if (d.type === 'slow') this.slowMult = d.value;
+                    return d.duration > 0;
+                });
+                this.slowMult = this.debuffs.some(d => d.type === 'slow') ? this.debuffs.find(d => d.type === 'slow').value : 1;
+                if (this.debuffs.some(d => d.type === 'stun')) this.vel = new Vector(0, 0);
+            }
+            takeDamage(dmg, type, attackerPl) {
+                let effectiveDmg = Math.max(1, dmg - this.def * (1 - 0.01 * attackerPl));
+                if (type === 'shieldAttack') effectiveDmg = dmg; // ignore def
+                this.health -= effectiveDmg;
+                return effectiveDmg;
+            }
+            applyDebuff(type, duration, value) {
+                this.debuffs.push({ type, duration, value: value || 1, dotValue: value || 0 });
+            }
+            render(ctx, animOffset = 0) {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y - this.size / 2, this.size / 2, 0, Math.PI * 2);
+                ctx.fill(); // head
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(this.pos.x, this.pos.y + this.size / 2);
+                ctx.lineTo(this.pos.x, this.pos.y + this.size * 1.2);
+                ctx.stroke(); // body
+                // Simple arms
+                const armAngle = Math.sin(animOffset) * 0.3;
+                ctx.beginPath();
+                ctx.moveTo(this.pos.x, this.pos.y);
+                ctx.lineTo(this.pos.x + Math.cos(armAngle) * this.size * 0.8, this.pos.y + Math.sin(armAngle) * this.size * 0.8);
+                ctx.stroke();
+                // Legs
+                const legAngle = Math.sin(animOffset * 1.5) * 0.2;
+                ctx.beginPath();
+                ctx.moveTo(this.pos.x, this.pos.y + this.size * 1.2);
+                ctx.lineTo(this.pos.x - legAngle * this.size * 0.5, this.pos.y + this.size * 1.7);
+                ctx.moveTo(this.pos.x, this.pos.y + this.size * 1.2);
+                ctx.lineTo(this.pos.x + legAngle * this.size * 0.5, this.pos.y + this.size * 1.7);
+                ctx.stroke();
+                if (this.pl > 8) {
+                    ctx.shadowColor = 'gold';
+                    ctx.shadowBlur = 5;
+                    ctx.beginPath();
+                    ctx.arc(this.pos.x, this.pos.y - this.size / 2, this.size / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+                // Health bar
+                ctx.fillStyle = 'red';
+                ctx.fillRect(this.pos.x - this.size, this.pos.y - this.size - 5, this.size * 2, 3);
+                ctx.fillStyle = 'green';
+                ctx.fillRect(this.pos.x - this.size, this.pos.y - this.size - 5, this.size * 2 * (this.health / this.maxHealth), 3);
+            }
+        }
+
+        class Player extends Entity {
+            constructor() {
+                super(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'blue');
+                this.maxHealth = 100;
+                this.health = 100;
+                this.maxMana = 100;
+                this.mana = 100;
                 this.pl = 1;
                 this.atk = 20;
                 this.def = 10;
-                this.unlocks = [0];
+                this.level = 1;
+                this.xp = 0;
+                this.xpToNext = 100;
+                this.unlockedAbilities = [new Ability('Magic Shot', 0.5, 5, 20, 'projectile', 'orange', this.pl)]; // index 0
+                this.selectedAbility = 0;
                 this.shieldActive = false;
-                this.shieldStrength = 50;
-                this.shieldRadius = 40;
+                this.shieldStrength = 0;
+                this.shieldMax = 100;
                 this.shieldYield = 1.0;
-                this.superSpeed = false;
-                this.superSpeedTimer = 0;
-                this.lastSpell = 0;
-                this.anim = { idle: 0, move: 0 };
+                this.speedBuff = 1;
+                this.speedBuffTimer = 0;
+                this.invulnTimer = 0;
+                this.animOffset = 0;
+                this.trailTimer = 0;
             }
-
             update(dt) {
-                // Movement
-                let dx = 0, dy = 0;
-                if (keys['w'] || keys['ArrowUp']) dy -= 1;
-                if (keys['s'] || keys['ArrowDown']) dy += 1;
-                if (keys['a'] || keys['ArrowLeft']) dx -= 1;
-                if (keys['d'] || keys['ArrowRight']) dx += 1;
-                let len = Math.sqrt(dx*dx + dy*dy);
-                if (len > 0) {
-                    dx /= len; dy /= len;
-                    this.x += dx * this.speed * (this.superSpeed ? 2 : 1) * dt;
-                    this.y += dy * this.speed * (this.superSpeed ? 2 : 1) * dt;
-                    this.anim.move += dt * 10;
-                } else {
-                    this.anim.idle += dt * 2;
-                }
-                // Bounds
-                this.x = Math.max(20, Math.min(780, this.x));
-                this.y = Math.max(20, Math.min(580, this.y));
-                // Regen
-                this.mana = Math.min(this.maxMana, this.mana + 20 * dt / 1000);
-                if (!this.shieldActive) this.shieldStrength = Math.min(50, this.shieldStrength + 10 * dt / 1000);
-                if (this.superSpeedTimer > 0) {
-                    this.superSpeedTimer -= dt;
-                    if (this.superSpeedTimer <= 0) this.superSpeed = false;
-                }
-                // Shield
-                if (keys[' ']) {
-                    if (this.mana >= 1 && this.shieldStrength > 0) {
-                        this.shieldActive = true;
-                    } else {
-                        this.shieldActive = false;
+                super.update(dt);
+                this.mana = Math.min(this.maxMana, this.mana + 20 * dt);
+                this.animOffset += dt * 2;
+                if (this.vel.mag() > 0.1) {
+                    this.trailTimer += dt;
+                    if (this.trailTimer > 0.1) {
+                        particles.push(new Particle(this.pos.sub(this.vel.norm().mul(5)), this.vel.mul(-1).norm().mul(50), 'blue', 0.5));
+                        this.trailTimer = 0;
                     }
+                }
+                if (this.shieldActive) {
+                    this.shieldStrength = Math.min(this.shieldMax, this.shieldStrength + 50 * dt);
                 } else {
-                    this.shieldActive = false;
+                    this.shieldStrength = Math.max(0, this.shieldStrength - 50 * dt);
                 }
-            }
-
-            castSpell(index, targetX, targetY) {
-                const spell = spells[index];
-                if (this.mana >= spell.mana && Date.now() - this.lastSpell >= spell.cd && spell.unlocked) {
-                    spell.func(this, targetX, targetY);
-                    this.mana -= spell.mana;
-                    this.lastSpell = Date.now();
-                    return true;
+                if (this.speedBuffTimer > 0) {
+                    this.speedBuffTimer -= dt;
+                    if (this.pl >= 12) this.invulnTimer = Math.max(this.invulnTimer - dt, 0);
+                    if (this.speedBuffTimer <= 0) this.speedBuff = 1;
                 }
-                return false;
+                this.speed = (3 * this.speedBuff * this.slowMult) * (1 + this.pl / 32);
+                this.vel = this.vel.mul(this.slowMult);
+                this.unlockedAbilities.forEach(a => { if (a.cd > 0) a.cd = Math.max(0, a.cd - dt); });
+                // Input move
+                let inputVel = new Vector(0, 0);
+                if (keys['w'] || keys['ArrowUp']) inputVel.y -= 1;
+                if (keys['s'] || keys['ArrowDown']) inputVel.y += 1;
+                if (keys['a'] || keys['ArrowLeft']) inputVel.x -= 1;
+                if (keys['d'] || keys['ArrowRight']) inputVel.x += 1;
+                if (inputVel.mag() > 0) this.vel = inputVel.norm().mul(this.speed);
+                if (this.invulnTimer > 0) this.invulnTimer -= dt;
             }
-
-            takeDamage(dmg) {
-                let netDmg = Math.max(1, dmg - this.def);
-                netDmg *= (1 - this.pl * 0.05); // PL DEF ignore
+            takeDamage(dmg, type, attackerPl) {
+                if (this.invulnTimer > 0) return 0;
+                let absorbed = 0;
                 if (this.shieldActive && this.shieldStrength > 0) {
-                    let absorbed = Math.min(netDmg, this.shieldStrength);
+                    absorbed = Math.min(dmg, this.shieldStrength);
                     this.shieldStrength -= absorbed;
                     this.mana -= absorbed * this.shieldYield;
-                    netDmg -= absorbed;
-                    // Particles
-                    for (let i = 0; i < 5; i++) {
-                        particles.push(new Particle(this.x, this.y, 'green', Math.random()*Math.PI*2, Math.random()*3 + 1));
-                    }
+                    for (let i = 0; i < 5; i++) particles.push(new Particle(this.pos, new Vector(Math.random() * 100 - 50, Math.random() * 100 - 50), 'yellow', 0.3));
                 }
-                this.health -= netDmg;
-                if (this.health <= 0) gameOver();
+                let effectiveDmg = Math.max(1, (dmg - absorbed) - this.def * (1 - 0.01 * this.pl));
+                this.health -= effectiveDmg;
+                if (this.health <= 0) gameState = 'gameOver';
+                return effectiveDmg;
             }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                let angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
-                ctx.rotate(angle);
-
-                // Stick figure body
-                ctx.strokeStyle = 'blue';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(0, -20); // head
-                ctx.lineTo(0, 0); // torso
-                ctx.moveTo(0, -10);
-                ctx.lineTo(-10, 0); // arm1
-                ctx.moveTo(0, -10);
-                ctx.lineTo(10, 0); // arm2
-                ctx.moveTo(0, 0);
-                ctx.lineTo(-8, 20 + Math.sin(this.anim.move) * 5); // leg1
-                ctx.moveTo(0, 0);
-                ctx.lineTo(8, 20 - Math.sin(this.anim.move) * 5); // leg2
-                ctx.stroke();
-
+            fire(targetPos) {
+                const abil = this.unlockedAbilities[this.selectedAbility];
+                if (abil.cd <= 0 && this.mana >= abil.manaCost) {
+                    abil.fire(this.pos, targetPos, this);
+                    this.mana -= abil.manaCost;
+                    abil.cd = abil.maxCd;
+                    console.log(`${abil.name} fired`);
+                    if (this.pl >= 16) screenShake = 0.1;
+                }
+            }
+            cycleAbility() {
+                this.selectedAbility = (this.selectedAbility + 1) % this.unlockedAbilities.length;
+            }
+            selectAbility(key) {
+                const keyMap = { '1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7, '9': 8, 'KeyC': 9, 'KeyV': 10, 'KeyB': 11, 'KeyN': 12, 'KeyM': 13 };
+                const idx = keyMap[key];
+                if (idx !== undefined && this.unlocks.includes(idx)) {
+                    this.selectedAbility = this.unlockedAbilities.findIndex(a => a.id === idx);
+                }
+            }
+            render(ctx) {
+                super.render(ctx, this.animOffset);
                 // Hat
                 ctx.fillStyle = 'purple';
-                ctx.beginPath();
-                ctx.arc(0, -25, 8, 0, Math.PI*2);
-                ctx.fill();
-
+                ctx.fillRect(this.pos.x - 4, this.pos.y - this.size / 2 - 6, 8, 4);
                 // Shield
-                if (this.shieldActive) {
-                    ctx.strokeStyle = 'cyan';
-                    ctx.lineWidth = 2;
+                if (this.shieldActive && this.shieldStrength > 0) {
+                    const radius = 40 + (this.pl >= 8 ? 20 : 0); // omni upgrade sim
+                    ctx.strokeStyle = 'lime';
+                    ctx.lineWidth = 3 + Math.sin(Date.now() * 0.01) * 2;
                     ctx.beginPath();
-                    ctx.arc(0, 0, this.shieldRadius, 0, Math.PI*2);
-                    ctx.stroke();
-                    // Pulse
-                    let pulse = Math.sin(animationFrame * 0.1) * 2;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, this.shieldRadius + pulse, 0, Math.PI*2);
+                    ctx.arc(this.pos.x, this.pos.y, radius, 0, Math.PI * 2);
                     ctx.stroke();
                 }
-
-                // Super speed trail
-                if (this.superSpeed) {
-                    ctx.strokeStyle = 'silver';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(0, 0);
-                    ctx.lineTo(0, -10);
-                    ctx.stroke();
+                // Aim line
+                ctx.strokeStyle = 'gray';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(this.pos.x, this.pos.y);
+                ctx.lineTo(mouse.x, mouse.y);
+                ctx.stroke();
+            }
+            save() {
+                const save = {
+                    pl: this.pl, level: this.level, xp: this.xp, atk: this.atk, def: this.def,
+                    shieldYield: this.shieldYield,
+                    unlockedAbilities: this.unlockedAbilities.map(a => ({ id: a.id, name: a.name, dmg: a.dmg, maxCd: a.maxCd, manaCost: a.manaCost }))
+                };
+                localStorage.setItem('alternateSave', JSON.stringify(save));
+            }
+            load() {
+                const saved = localStorage.getItem('alternateSave');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    this.pl = data.pl; this.level = data.level; this.xp = data.xp;
+                    this.atk = data.atk; this.def = data.def;
+                    this.shieldYield = data.shieldYield;
+                    this.unlockedAbilities = data.unlockedAbilities.map(aData => new Ability(aData.name, aData.maxCd, aData.manaCost, aData.dmg, 'projectile', 'orange', this.pl, aData.id)).filter(a => a); // reconstruct
+                    this.unlocks = this.unlockedAbilities.map(a => a.id);
                 }
-
-                ctx.restore();
             }
         }
 
-        // Enemy class
-        class Enemy {
-            constructor(x, y, type, pl) {
-                this.x = x;
-                this.y = y;
+        class Enemy extends Entity {
+            constructor(x, y, color, level, type) {
+                super(x, y, color);
+                this.level = level;
                 this.type = type;
-                this.pl = pl || Math.floor(level / 2);
+                this.pl = Math.floor(level / 2);
                 this.health = 50 + level * 20;
                 this.maxHealth = this.health;
                 this.speed = 1 + level * 0.2;
                 this.atk = 10 + level * 5;
                 this.def = 5 + level * 2;
-                this.size = this.pl >= 12 ? 1.5 : 1;
-                this.color = ['gray', 'red', 'blue', 'yellow', 'green'][type] || 'gray';
-                this.shield = this.pl >= 4 ? 30 : 0;
-                this.lastAttack = 0;
-                this.anim = { move: 0 };
-                this.dodgeChance = 0.02 * this.pl;
-                this.aiComplexity = this.pl;
-                this.target = player;
+                this.spellTimer = 0;
+                this.dodgeTimer = 0;
+                this.shieldActive = this.pl >= 4 && Math.random() < 0.3;
+                this.shieldStrength = this.pl >= 4 ? 50 : 0;
+                this.unlockedAbilities = ABILITIES.slice(0, Math.min(this.pl, ABILITIES.length)).map((a, i) => new Ability(a.name, a.maxCd, a.manaCost, a.baseDmg, a.type, a.color, this.pl, i));
+                this.animOffset = Math.random() * Math.PI * 2;
+                this.isBoss = false;
+                this.size = type === 'boss' ? 15 : 10;
             }
-
             update(dt) {
-                // AI
-                let dx = player.x - this.x;
-                let dy = player.y - this.y;
-                let dist = Math.sqrt(dx*dx + dy*dy);
+                super.update(dt);
+                this.animOffset += dt * 1.5;
+                if (this.shieldActive) this.shieldStrength = Math.min(50 + this.pl * 10, this.shieldStrength + 30 * dt);
+                this.spellTimer += dt;
+                let dist = this.pos.sub(player.pos).mag();
+                let dir = player.pos.sub(this.pos).norm();
                 if (dist > 30) {
-                    // Chase
-                    dx /= dist; dy /= dist;
-                    this.x += dx * this.speed * dt;
-                    this.y += dy * this.speed * dt;
-                    this.anim.move += dt * 8;
+                    this.vel = dir.mul(this.speed);
                 } else {
-                    // Melee
-                    player.takeDamage(this.atk * dt / 1000);
+                    this.vel = new Vector(0, 0);
+                    if (dist < 15) player.takeDamage(this.atk, 'melee', this.pl);
+                }
+                // AI cast
+                let castInt = Math.max(3 - this.pl * 0.1, 1);
+                if (this.spellTimer > castInt && !this.debuffs.some(d => d.type === 'stun')) {
+                    this.spellTimer = 0;
+                    const abil = this.unlockedAbilities[Math.floor(Math.random() * this.unlockedAbilities.length)];
+                    abil.fire(this.pos, player.pos, this);
+                    console.log(`${this.type} casts ${abil.name}`);
                 }
                 // Dodge
-                if (Math.random() < this.dodgeChance * dt) {
-                    let dodgeAngle = Math.random() * Math.PI * 2;
-                    this.x += Math.cos(dodgeAngle) * 20;
-                    this.y += Math.sin(dodgeAngle) * 20;
+                if (this.dodgeTimer <= 0 && Math.random() < 0.02 * this.pl) {
+                    let perp = new Vector(-dir.y, dir.x).mul((Math.random() > 0.5 ? 1 : -1));
+                    this.vel = perp.mul(this.speed * 1.5);
+                    this.dodgeTimer = 0.5;
+                } else {
+                    this.dodgeTimer -= dt;
                 }
-                // Attack
-                if (Date.now() - this.lastAttack > (3000 - this.pl * 100) && Math.random() < 0.01 * this.pl * dt) {
-                    this.attack();
-                    this.lastAttack = Date.now();
+                // Flee at PL16
+                if (player.pl >= 16 && dist > 50 && Math.random() < 0.1) {
+                    this.vel = dir.mul(-this.speed * 1.5);
+                }
+                if (this.isBoss) {
+                    this.shieldActive = true;
                 }
             }
-
-            attack() {
-                // Simple shot for now, scale with PL
-                let spellIndex = Math.min(Math.floor(this.pl / 2), spells.length - 1);
-                spells[spellIndex].func(this, player.x, player.y, true); // enemy cast
-            }
-
-            takeDamage(dmg, ignoreShield = false) {
-                if (!ignoreShield && this.shield > 0) {
-                    this.shield -= dmg;
-                    if (this.shield < 0) {
-                        dmg = -this.shield;
-                        this.shield = 0;
-                    } else {
-                        dmg = 0;
-                    }
+            takeDamage(dmg, type, attackerPl) {
+                let absorbed = 0;
+                if (this.shieldActive && this.shieldStrength > 0 && type !== 'shieldAttack') {
+                    absorbed = Math.min(dmg, this.shieldStrength);
+                    this.shieldStrength -= absorbed;
+                    for (let i = 0; i < 5; i++) particles.push(new Particle(this.pos, new Vector(Math.random() * 100 - 50, Math.random() * 100 - 50), 'yellow', 0.3));
                 }
-                let netDmg = Math.max(1, dmg - this.def);
-                this.health -= netDmg;
+                let effectiveDmg = Math.max(1, (dmg - absorbed) - this.def * (1 - 0.01 * attackerPl));
+                if (type === 'shieldAttack') effectiveDmg = dmg - absorbed;
+                this.health -= effectiveDmg;
                 if (this.health <= 0) {
-                    // Death particles
-                    for (let i = 0; i < 10; i++) {
-                        particles.push(new Particle(this.x, this.y, this.color, Math.random()*Math.PI*2, Math.random()*5 + 2));
+                    player.xp += 10 + player.level * 5;
+                    addParticles(this.pos, 'spark', 20);
+                    enemies = enemies.filter(e => e !== this);
+                    if (enemies.length === 0) {
+                        player.xp += currentWave * 50; // wave bonus
+                        currentWave++;
+                        if (player.xp >= player.xpToNext) {
+                            player.level++;
+                            player.xp -= player.xpToNext;
+                            player.xpToNext = Math.floor(player.xpToNext * 1.5);
+                            gameState = 'levelUp';
+                            upgradePool = getUpgradePool(player);
+                        }
+                        spawnWave();
                     }
-                    xp += 10 + this.pl * 5;
-                    enemiesInWave--;
-                    if (enemiesInWave <= 0) nextWave();
                 }
+                return effectiveDmg;
             }
-
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.scale(this.size, this.size);
-
-                // Stick figure
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(0, -15, 5, 0, Math.PI*2); // head
-                ctx.moveTo(0, -10);
-                ctx.lineTo(0, 10); // body
-                ctx.moveTo(0, 0);
-                ctx.lineTo(-8, 20 + Math.sin(this.anim.move) * 3); // leg1
-                ctx.moveTo(0, 0);
-                ctx.lineTo(8, 20 - Math.sin(this.anim.move) * 3); // leg2
-                ctx.moveTo(0, 0);
-                ctx.lineTo(10 * Math.sin(animationFrame * 0.05), -10 + 10 * Math.cos(animationFrame * 0.05)); // arm cast
-                ctx.stroke();
-
-                // Crown for high PL
-                if (this.pl >= 8) {
-                    ctx.fillStyle = 'gold';
-                    ctx.beginPath();
-                    ctx.moveTo(-5, -20);
-                    ctx.lineTo(0, -30);
-                    ctx.lineTo(5, -20);
-                    ctx.closePath();
-                    ctx.fill();
+            render(ctx) {
+                if (this.isBoss) {
+                    ctx.save();
+                    ctx.translate(this.pos.x, this.pos.y);
+                    ctx.scale(1.5, 1.5);
+                    this.pos = new Vector(0, 0); // temp for super render
+                    super.render(ctx, this.animOffset);
+                    this.pos = ctx.getTransform().e ? new Vector(ctx.getTransform().e, ctx.getTransform().f) : this.pos; // hack
+                    ctx.restore();
+                } else {
+                    super.render(ctx, this.animOffset);
                 }
-
-                // Shield
-                if (this.shield > 0) {
-                    ctx.strokeStyle = 'gray';
+                if (this.shieldActive && this.shieldStrength > 0) {
+                    ctx.strokeStyle = 'cyan';
                     ctx.beginPath();
-                    ctx.arc(0, 0, 30, 0, Math.PI*2);
+                    ctx.arc(this.pos.x, this.pos.y, 30, 0, Math.PI * 2);
                     ctx.stroke();
                 }
-
-                ctx.restore();
-                // Health bar
-                ctx.fillStyle = 'red';
-                ctx.fillRect(this.x - 15, this.y - 30, 30, 3);
-                ctx.fillStyle = 'green';
-                ctx.fillRect(this.x - 15, this.y - 30, 30 * (this.health / this.maxHealth), 3);
             }
         }
 
-        // Projectile class
         class Projectile {
-            constructor(x, y, vx, vy, color, dmg, owner, homing = false, slow = 0) {
-                this.x = x;
-                this.y = y;
-                this.vx = vx;
-                this.vy = vy;
+            constructor(pos, vel, color, dmg, type, pl, owner = null, id = 0) {
+                this.pos = pos;
+                this.vel = vel;
                 this.color = color;
-                this.dmg = dmg;
+                this.dmg = dmg * (1 + pl / 16);
+                this.type = type;
+                this.pl = pl;
                 this.owner = owner;
-                this.homing = homing;
-                this.slow = slow;
-                this.life = 3000;
-                this.trail = [];
+                this.id = id;
+                this.life = Infinity;
+                this.size = type === 'beta' ? 8 : 5;
+                this.bounces = 0;
+                this.maxBounces = type === 'recursive' ? 3 + pl : 0;
+                this.launchTime = Date.now();
             }
-
             update(dt) {
-                if (this.homing && player && Math.random() < 0.1) {
-                    let dx = player.x - this.x;
-                    let dy = player.y - this.y;
-                    let dist = Math.sqrt(dx*dx + dy*dy);
-                    this.vx += (dx / dist) * 0.5;
-                    this.vy += (dy / dist) * 0.5;
-                }
-                this.x += this.vx * dt;
-                this.y += this.vy * dt;
-                this.trail.push({x: this.x, y: this.y});
-                if (this.trail.length > 10) this.trail.shift();
-                this.life -= dt;
-                if (this.life <= 0 || this.x < 0 || this.x > 800 || this.y < 0 || this.y > 600) {
-                    return false;
-                }
-                // Collision with enemies/player
-                if (this.owner === player) {
-                    enemies.forEach((e, i) => {
-                        let dist = Math.sqrt((this.x - e.x)**2 + (this.y - e.y)**2);
-                        if (dist < 15) {
-                            e.takeDamage(this.dmg * (1 + player.pl / 16));
-                            return false;
+                this.pos = this.pos.add(this.vel.mul(dt));
+                // Homing
+                if (['magic', 'curve', 'missile'].includes(this.type)) {
+                    let target = this.type === 'curve' || this.type === 'missile' ? findNearestEnemy(this.pos) : (this.type === 'magic' && this.pl > 10 ? findNearestEnemy(this.pos) : null);
+                    if (target) {
+                        let steerStrength = this.type === 'missile' ? 0.2 : (this.type === 'curve' ? 0.1 : 0.05);
+                        let desired = target.pos.sub(this.pos).norm().mul(this.vel.mag());
+                        let steer = desired.sub(this.vel.norm().mul(this.vel.mag())).mul(steerStrength);
+                        this.vel = this.vel.add(steer.mul(dt * 60));
+                        // Curve sin
+                        if (this.type === 'curve') {
+                            let time = (Date.now() - this.launchTime) / 1000;
+                            let perp = new Vector(-this.vel.y, this.vel.x).norm();
+                            this.vel = this.vel.add(perp.mul(Math.sin(time * 5) * 20 * dt));
                         }
-                    });
-                } else {
-                    let dist = Math.sqrt((this.x - player.x)**2 + (this.y - player.y)**2);
-                    if (dist < 15) {
-                        player.takeDamage(this.dmg);
-                        return false;
                     }
                 }
-                return true;
+                // Bounce walls
+                if (this.type === 'recursive') {
+                    if (this.pos.x <= 0 || this.pos.x >= GAME_WIDTH) {
+                        this.vel.x *= -1;
+                        this.pos.x = Math.max(0, Math.min(GAME_WIDTH, this.pos.x));
+                        this.bounces++;
+                    }
+                    if (this.pos.y <= 0 || this.pos.y >= GAME_HEIGHT) {
+                        this.vel.y *= -1;
+                        this.pos.y = Math.max(0, Math.min(GAME_HEIGHT, this.pos.y));
+                        this.bounces++;
+                    }
+                    if (this.bounces > this.maxBounces) this.life = 0;
+                }
+                // Proj vs proj reflect
+                if (this.type === 'shieldAttack') {
+                    projectiles.forEach(other => {
+                        if (other !== this && other.owner !== player && this.pos.sub(other.pos).mag() < this.size + other.size) {
+                            other.vel = other.vel.mul(-1);
+                            other.owner = player;
+                            addParticles(this.pos, 'spark', 5);
+                        }
+                    });
+                }
+                // Entity collision
+                let targets = this.owner === player ? enemies : [player];
+                for (let t of targets) {
+                    if (this.pos.sub(t.pos).mag() < this.size + t.size) {
+                        let hitDmg = t.takeDamage(this.dmg, this.type, this.pl);
+                        addParticles(t.pos, 'spark', 10);
+                        if (this.type === 'ice') t.applyDebuff('slow', 2, 0.5);
+                        if (this.type === 'beam' || this.type === 'beta') t.applyDebuff('stun', this.pl >= 8 ? 1 : 0, 1);
+                        if (this.type === 'lightning') {
+                            let chains = findNearestEnemies(t.pos, 3, 50);
+                            chains.forEach(c => c.takeDamage(this.dmg * 0.8, this.type, this.pl));
+                            if (this.pl > 10) t.applyDebuff('dot', 3, this.dmg / 3);
+                        }
+                        if (this.type === 'beta') t.applyDebuff('dot', 3, this.dmg / 3);
+                        if (this.type === 'missile') {
+                            targets.forEach(tt => {
+                                if (tt !== t && tt.pos.sub(t.pos).mag() < 50) tt.takeDamage(this.dmg * 0.5, this.type, this.pl);
+                            });
+                        }
+                        if (this.type === 'recursive' && this.bounces < this.maxBounces) {
+                            let normal = this.pos.sub(t.pos).norm();
+                            this.vel = this.vel.sub(normal.mul(2 * this.vel.dot(normal)));
+                            this.bounces++;
+                            this.pos = this.pos.add(normal.mul(10)); // push out
+                        } else if (!['beam', 'beta'].includes(this.type)) {
+                            this.life = 0;
+                        }
+                    }
+                }
+                if (this.life === Infinity && (this.pos.x < 0 || this.pos.x > GAME_WIDTH || this.pos.y < 0 || this.pos.y > GAME_HEIGHT)) this.life = 0;
+                this.life -= dt;
             }
-
-            draw() {
-                // Trail
-                ctx.strokeStyle = this.color + '40';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                this.trail.forEach((p, i) => {
-                    if (i === 0) ctx.moveTo(p.x, p.y);
-                    else ctx.lineTo(p.x, p.y);
-                });
-                ctx.stroke();
-
-                // Main
+            render(ctx) {
                 ctx.fillStyle = this.color;
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, 5, 0, Math.PI*2);
+                ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
                 ctx.fill();
-            }
-        }
-
-        // Particle class
-        class Particle {
-            constructor(x, y, color, angle, speed) {
-                this.x = x;
-                this.y = y;
-                this.vx = Math.cos(angle) * speed;
-                this.vy = Math.sin(angle) * speed;
-                this.color = color;
-                this.life = 1000;
-                this.decay = 0.98;
-            }
-
-            update(dt) {
-                this.x += this.vx * dt;
-                this.y += this.vy * dt;
-                this.vx *= this.decay;
-                this.vy *= this.decay;
-                this.life -= dt;
-                return this.life > 0;
-            }
-
-            draw() {
-                ctx.fillStyle = this.color + Math.floor(this.life / 10).toString(16).padStart(2, '0');
+                // Trail
+                ctx.globalAlpha = 0.5;
+                ctx.fillStyle = this.color;
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, 2, 0, Math.PI*2);
+                ctx.arc(this.pos.x - this.vel.x * 0.05, this.pos.y - this.vel.y * 0.05, this.size * 0.5, 0, Math.PI * 2);
                 ctx.fill();
+                ctx.globalAlpha = 1;
             }
         }
 
-        // Spell functions
-        function magicShot(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let vx = Math.cos(angle) * 5;
-            let vy = Math.sin(angle) * 5;
-            projectiles.push(new Projectile(caster.x, caster.y, vx, vy, 'orange', caster.atk, caster, caster.pl > 8));
-        }
-
-        function triShot(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            for (let i = -1; i <= 1; i++) {
-                let a = angle + i * 0.3;
-                let vx = Math.cos(a) * 4;
-                let vy = Math.sin(a) * 4;
-                projectiles.push(new Projectile(caster.x, caster.y, vx, vy, 'blue', caster.atk * 0.8, caster));
+        class Particle {
+            constructor(pos, vel, color, life) {
+                this.pos = pos;
+                this.vel = vel;
+                this.color = color;
+                this.life = life;
+                this.maxLife = life;
+                this.size = 2 + Math.random() * 3;
+            }
+            update(dt) {
+                this.pos = this.pos.add(this.vel.mul(dt));
+                this.vel = this.vel.mul(0.98);
+                this.life -= dt;
+            }
+            render(ctx) {
+                let alpha = this.life / this.maxLife;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.pos.x - this.size / 2, this.pos.y - this.size / 2, this.size, this.size);
+                ctx.globalAlpha = 1;
             }
         }
 
-        function beamShot(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let dist = 400;
-            let ex = caster.x + Math.cos(angle) * dist;
-            let ey = caster.y + Math.sin(angle) * dist;
-            // Draw beam
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(caster.x, caster.y);
-            ctx.lineTo(ex, ey);
-            ctx.stroke();
-            // Damage along line
-            enemies.forEach(e => {
-                let proj = {x: caster.x, y: caster.y, vx: Math.cos(angle)*10, vy: Math.sin(angle)*10};
-                let t = 0;
-                while (t < dist) {
-                    proj.x += proj.vx;
-                    proj.y += proj.vy;
-                    let d = Math.sqrt((proj.x - e.x)**2 + (proj.y - e.y)**2);
-                    if (d < 15) {
-                        e.takeDamage(caster.atk * 2, caster.pl >= 8); // stun via dmg
+        class Ability {
+            constructor(name, maxCd, manaCost, baseDmg, type, color, pl, id = 0) {
+                this.name = name;
+                this.id = id;
+                this.maxCd = maxCd;
+                this.cd = 0;
+                this.manaCost = manaCost;
+                this.dmg = baseDmg;
+                this.type = type;
+                this.color = color;
+                this.pl = pl;
+            }
+            fire(from, to, owner) {
+                let dir = to.sub(from).norm();
+                switch (this.id) {
+                    case 0: // Magic Shot
+                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(200), this.color, this.dmg, 'magic', this.pl, owner, this.id));
                         break;
-                    }
-                    t += 10;
+                    case 1: // Tri-Shot
+                        let angle = Math.atan2(dir.y, dir.x);
+                        for (let a = -0.52; a <= 0.52; a += 0.52) {
+                            let d = new Vector(Math.cos(angle + a), Math.sin(angle + a)).mul(180);
+                            projectiles.push(new Projectile(from.add(dir.mul(10)), d, this.color, this.dmg, 'tri', this.pl, owner, this.id));
+                        }
+                        break;
+                    case 2: // Beam Shot
+                        fireBeam(from, to, this.dmg, this.pl, 'white', 3, owner);
+                        break;
+                    case 3: // Ice Shard
+                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(150), 'cyan', this.dmg, 'ice', this.pl, owner, this.id));
+                        break;
+                    case 4: // Lightning
+                        fireLightning(from, to, this.dmg, this.pl, owner);
+                        break;
+                    case 5: // Curve Shot
+                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(180), 'green', this.dmg, 'curve', this.pl, owner, this.id));
+                        break;
+                    case 6: // Shield Breaker
+                        fireAoE(to, 50 + this.pl * 5, this.dmg * 0.5, 'purple', true, this.pl); // break shields
+                        break;
+                    case 7: // Homing Missile
+                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(150), 'red', this.dmg, 'missile', this.pl, owner, this.id));
+                        break;
+                    case 8: // Force Wave
+                        fireCone(from, to, this.dmg, 200, Math.PI / 3, this.pl, owner);
+                        break;
+                    case 9: // Penta Shot
+                        let pAngle = Math.atan2(dir.y, dir.x);
+                        for (let a = -0.785; a <= 0.785; a += 0.3925) {
+                            let d = new Vector(Math.cos(pAngle + a), Math.sin(pAngle + a)).mul(160);
+                            projectiles.push(new Projectile(from.add(dir.mul(10)), d, 'blue', this.dmg, 'penta', this.pl, owner, this.id));
+                        }
+                        break;
+                    case 10: // Recursive Shot
+                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(180), 'violet', this.dmg, 'recursive', this.pl, owner, this.id));
+                        break;
+                    case 11: // Shield Attack
+                        projectiles.push(new Projectile(from.add(dir.mul(10)), dir.mul(200), 'silver', this.dmg, 'shieldAttack', this.pl, owner, this.id));
+                        break;
+                    case 12: // Beta Laser
+                        fireBeam(from, to, this.dmg * 2, this.pl, 'red', 10, owner);
+                        break;
+                    case 13: // Super Speed
+                        owner.speedBuff = 2;
+                        owner.speedBuffTimer = 5;
+                        if (owner.pl >= 12) owner.invulnTimer = 5;
+                        addParticles(owner.pos, 'blue', 15);
+                        break;
                 }
-            });
-            // Temp projectile for pierce
-            projectiles.push(new Projectile(caster.x, caster.y, Math.cos(angle)*10, Math.sin(angle)*10, 'white', caster.atk * 2, caster, false, caster.pl >= 8 ? 0.5 : 0));
-        }
-
-        function iceShard(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let vx = Math.cos(angle) * 6;
-            let vy = Math.sin(angle) * 6;
-            projectiles.push(new Projectile(caster.x, caster.y, vx, vy, 'cyan', caster.atk, caster, false, 0.5));
-        }
-
-        function lightning(caster, tx, ty, isEnemy = false) {
-            // Zigzag to target
-            let dx = tx - caster.x;
-            let dy = ty - caster.y;
-            let steps = 10 + caster.pl * 2;
-            let path = [];
-            path.push({x: caster.x, y: caster.y});
-            for (let i = 1; i <= steps; i++) {
-                let px = caster.x + (dx / steps) * i + (Math.random() - 0.5) * 20;
-                let py = caster.y + (dy / steps) * i + (Math.random() - 0.5) * 20;
-                path.push({x: px, y: py});
             }
-            // Draw
+        }
+
+        const ABILITIES = [
+            { name: 'Magic Shot', maxCd: 0.5, manaCost: 5, baseDmg: 20, type: 'projectile', color: 'orange' },
+            { name: 'Tri-Shot', maxCd: 0.8, manaCost: 8, baseDmg: 15, type: 'spread', color: 'blue' },
+            { name: 'Beam Shot', maxCd: 1.5, manaCost: 15, baseDmg: 40, type: 'beam', color: 'white' },
+            { name: 'Ice Shard', maxCd: 1.0, manaCost: 10, baseDmg: 25, type: 'projectile', color: 'cyan' },
+            { name: 'Lightning', maxCd: 2.0, manaCost: 20, baseDmg: 30, type: 'chain', color: 'yellow' },
+            { name: 'Curve Shot', maxCd: 0.7, manaCost: 7, baseDmg: 22, type: 'homing', color: 'green' },
+            { name: 'Shield Breaker', maxCd: 3.0, manaCost: 25, baseDmg: 10, type: 'aoe', color: 'purple' },
+            { name: 'Homing Missile', maxCd: 2.5, manaCost: 18, baseDmg: 35, type: 'homing', color: 'red' },
+            { name: 'Force Wave', maxCd: 2.0, manaCost: 15, baseDmg: 28, type: 'cone', color: 'blue' },
+            { name: 'Penta Shot', maxCd: 0.4, manaCost: 12, baseDmg: 18, type: 'spread', color: 'blue' },
+            { name: 'Recursive Shot', maxCd: 4.0, manaCost: 30, baseDmg: 25, type: 'bounce', color: 'violet' },
+            { name: 'Shield Attack', maxCd: 1.2, manaCost: 12, baseDmg: 30, type: 'projectile', color: 'silver' },
+            { name: 'Beta Laser', maxCd: 5.0, manaCost: 40, baseDmg: 60, type: 'beam', color: 'red' },
+            { name: 'Super Speed', maxCd: 10.0, manaCost: 25, baseDmg: 0, type: 'buff', color: 'gold' }
+        ];
+
+        function fireBeam(from, to, dmg, pl, color, width, owner) {
+            let dir = to.sub(from).norm();
+            let length = from.sub(to).mag();
+            let step = dir.mul(5);
+            let current = from.add(dir.mul(10));
+            while (current.sub(from).mag() < length) {
+                let targets = owner === player ? enemies : [player];
+                for (let t of targets) {
+                    if (current.sub(t.pos).mag() < t.size + 5) {
+                        t.takeDamage(dmg, 'beam', pl);
+                        addParticles(t.pos, 'white', 8);
+                    }
+                }
+                current = current.add(step);
+            }
+            // Render
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(to.x, to.y);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            console.log('Beam fired');
+        }
+
+        function fireLightning(from, to, dmg, pl, owner) {
+            // Simple zig-zag approx
+            let points = [];
+            let current = from.add( (to.sub(from)).mul(0.2) );
+            for (let i = 0; i < 5; i++) {
+                let offset = new Vector(Math.sin(i * 2) * 20, Math.cos(i * 2) * 20);
+                points.push(current.add(offset));
+                current = current.add( (to.sub(from)).mul(0.2) );
+            }
+            points.push(to);
+            // Damage first target
+            let targets = owner === player ? enemies : [player];
+            let nearest = findNearestTo(from, targets);
+            if (nearest) nearest.takeDamage(dmg, 'lightning', pl);
+            // Render
             ctx.strokeStyle = 'yellow';
             ctx.lineWidth = 3;
+            ctx.shadowColor = 'yellow';
+            ctx.shadowBlur = 10;
             ctx.beginPath();
-            path.forEach((p, i) => {
-                if (i === 0) ctx.moveTo(p.x, p.y);
-                else ctx.lineTo(p.x, p.y);
-            });
-            ctx.stroke();
-            // Damage nearest
-            let closest = null;
-            let minDist = Infinity;
-            enemies.forEach(e => {
-                let d = Math.sqrt((tx - e.x)**2 + (ty - e.y)**2);
-                if (d < minDist && d < 50 + caster.pl * 5) {
-                    minDist = d;
-                    closest = e;
-                }
-            });
-            if (closest) closest.takeDamage(caster.atk * 1.5);
-            if (caster.pl >= 10) {
-                // Chain
-                let chained = [closest];
-                for (let c = 0; c < 3; c++) {
-                    let next = null;
-                    let minD = Infinity;
-                    enemies.forEach(e => {
-                        if (chained.includes(e)) return;
-                        let d = Math.sqrt((chained[c].x - e.x)**2 + (chained[c].y - e.y)**2);
-                        if (d < minD && d < 60) {
-                            minD = d;
-                            next = e;
-                        }
-                    });
-                    if (next) {
-                        chained.push(next);
-                        next.takeDamage(caster.atk);
-                    } else break;
-                }
+            ctx.moveTo(from.x, from.y);
+            for (let p of points) {
+                ctx.lineTo(p.x, p.y);
             }
-        }
-
-        function curveShot(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let vx = Math.cos(angle) * 4;
-            let vy = Math.sin(angle) * 4;
-            projectiles.push(new Projectile(caster.x, caster.y, vx, vy, 'green', caster.atk, caster, true));
-        }
-
-        function shieldBreaker(caster, tx, ty, isEnemy = false) {
-            let dx = tx - caster.x;
-            let dy = ty - caster.y;
-            let dist = Math.sqrt(dx*dx + dy*dy);
-            let ex = caster.x + (dx / dist) * 100;
-            let ey = caster.y + (dy / dist) * 100;
-            // Pulse
-            ctx.strokeStyle = 'purple';
-            ctx.lineWidth = 5;
-            ctx.beginPath();
-            ctx.arc(tx, ty, 50 + caster.pl * 5, 0, Math.PI*2);
             ctx.stroke();
-            // Damage shields
-            enemies.forEach(e => {
-                let d = Math.sqrt((tx - e.x)**2 + (ty - e.y)**2);
-                if (d < 50 + caster.pl * 5) {
-                    e.shield = Math.max(0, e.shield - (50 + caster.pl * 10));
-                    e.takeDamage(caster.atk * 0.5);
+            ctx.shadowBlur = 0;
+        }
+
+        function fireAoE(pos, radius, dmg, color, breakShield, pl) {
+            let targets = player ? enemies : [player];
+            targets.forEach(t => {
+                if (t.pos.sub(pos).mag() < radius) {
+                    if (breakShield) t.shieldStrength -= 50 + pl * 10;
+                    t.takeDamage(dmg, 'aoe', pl);
+                    addParticles(t.pos, color, 10);
                 }
             });
-        }
-
-        function homingMissile(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let vx = Math.cos(angle) * 3;
-            let vy = Math.sin(angle) * 3;
-            let proj = new Projectile(caster.x, caster.y, vx, vy, 'red', caster.atk * 1.5, caster, caster.pl >= 6);
-            proj.explodeRadius = caster.pl >= 6 ? 40 : 0;
-            projectiles.push(proj);
-        }
-
-        function forceWave(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            // Cone
-            ctx.strokeStyle = 'blue';
+            // Render pulse
+            ctx.strokeStyle = color;
             ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(caster.x, caster.y);
-            let ex1 = caster.x + Math.cos(angle - 0.5) * 200;
-            let ey1 = caster.y + Math.sin(angle - 0.5) * 200;
-            let ex2 = caster.x + Math.cos(angle + 0.5) * 200;
-            let ey2 = caster.y + Math.sin(angle + 0.5) * 200;
-            ctx.lineTo(ex1, ey1);
-            ctx.moveTo(caster.x, caster.y);
-            ctx.lineTo(ex2, ey2);
+            ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
             ctx.stroke();
-            // Damage and knockback
-            enemies.forEach(e => {
-                let dx = e.x - caster.x;
-                let dy = e.y - caster.y;
-                let a = Math.atan2(dy, dx);
-                let da = Math.abs(a - angle);
-                if (da < 0.5 && Math.sqrt(dx*dx + dy*dy) < 200) {
-                    e.takeDamage(caster.atk);
-                    // Knockback
-                    let kb = Math.cos(a) * 100;
-                    let kby = Math.sin(a) * 100;
-                    e.x += kb;
-                    e.y += kby;
-                }
-            });
         }
 
-        function pentaShot(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            for (let i = -2; i <= 2; i++) {
-                let a = angle + i * 0.4;
-                let vx = Math.cos(a) * 5;
-                let vy = Math.sin(a) * 5;
-                projectiles.push(new Projectile(caster.x, caster.y, vx, vy, 'lightblue', caster.atk * 0.6, caster));
-            }
-        }
-
-        function recursiveShot(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let vx = Math.cos(angle) * 4;
-            let vy = Math.sin(angle) * 4;
-            let proj = new Projectile(caster.x, caster.y, vx, vy, 'pink', caster.atk * 2, caster);
-            proj.bounces = 3 + caster.pl;
-            projectiles.push(proj);
-        }
-
-        function shieldAttack(caster, tx, ty, isEnemy = false) {
-            // Shield proj
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let vx = Math.cos(angle) * 5;
-            let vy = Math.sin(angle) * 5;
-            let proj = new Projectile(caster.x, caster.y, vx, vy, 'gold', caster.atk, caster);
-            proj.ignoreShield = true;
-            proj.reflect = true;
-            projectiles.push(proj);
-        }
-
-        function betaLaser(caster, tx, ty, isEnemy = false) {
-            let angle = Math.atan2(ty - caster.y, tx - caster.x);
-            let dist = 500;
-            let ex = caster.x + Math.cos(angle) * dist;
-            let ey = caster.y + Math.sin(angle) * dist;
-            // Thick beam
-            let grad = ctx.createLinearGradient(caster.x, caster.y, ex, ey);
-            grad.addColorStop(0, 'crimson');
-            grad.addColorStop(1, 'darkred');
-            ctx.strokeStyle = grad;
-            ctx.lineWidth = 8;
-            ctx.beginPath();
-            ctx.moveTo(caster.x, caster.y);
-            ctx.lineTo(ex, ey);
-            ctx.stroke();
-            // Damage
-            enemies.forEach(e => {
-                let projx = caster.x;
-                let projy = caster.y;
-                let t = 0;
-                while (t < dist) {
-                    projx += Math.cos(angle) * 10;
-                    projy += Math.sin(angle) * 10;
-                    let d = Math.sqrt((projx - e.x)**2 + (projy - e.y)**2);
-                    if (d < 20) {
-                        e.takeDamage(caster.atk * 3);
-                        // DoT
-                        if (caster.pl >= 12) e.health -= caster.atk * 0.1; // over time
-                        break;
+        function fireCone(from, to, dmg, length, angle, pl, owner) {
+            let dir = to.sub(from).norm();
+            let coneAng = Math.atan2(dir.y, dir.x);
+            let targets = owner === player ? enemies : [player];
+            targets.forEach(t => {
+                let tDist = t.pos.sub(from).mag();
+                if (tDist < length) {
+                    let tAng = Math.atan2(t.pos.y - from.y, t.pos.x - from.x);
+                    let diff = Math.abs(tAng - coneAng);
+                    if (diff < angle / 2 || Math.abs(diff - Math.PI * 2) < angle / 2) {
+                        t.takeDamage(dmg, 'cone', pl);
+                        // Knockback
+                        let kbDir = t.pos.sub(from).norm();
+                        t.vel = t.vel.add(kbDir.mul(100));
+                        addParticles(t.pos, 'blue', 5);
                     }
-                    t += 10;
                 }
             });
+            // Render cone
+            ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(from.x + Math.cos(coneAng - angle / 2) * length, from.y + Math.sin(coneAng - angle / 2) * length);
+            ctx.lineTo(from.x + Math.cos(coneAng + angle / 2) * length, from.y + Math.sin(coneAng + angle / 2) * length);
+            ctx.closePath();
+            ctx.fill();
         }
 
-        function superSpeed(caster, tx, ty, isEnemy = false) {
-            caster.superSpeed = true;
-            caster.superSpeedTimer = 5000;
-            // Trail effect
-            for (let i = 0; i < 20; i++) {
-                setTimeout(() => {
-                    particles.push(new Particle(caster.x, caster.y, 'silver', Math.random()*Math.PI*2, Math.random()*4 + 2));
-                }, i * 50);
-            }
-            if (caster.pl >= 12) {
-                // Invuln 1s
-                setTimeout(() => caster.health = Math.min(caster.maxHealth, caster.health + 50), 1000);
+        function findNearestEnemy(pos) {
+            return enemies.reduce((closest, e) => {
+                let d = e.pos.sub(pos).mag();
+                return d < (closest ? closest.pos.sub(pos).mag() : Infinity) ? e : closest;
+            }, null);
+        }
+
+        function findNearestEnemies(pos, count, range) {
+            return enemies.filter(e => e.pos.sub(pos).mag() < range).sort((a, b) => a.pos.sub(pos).mag() - b.pos.sub(pos).mag()).slice(0, count);
+        }
+
+        function findNearestTo(pos, targets) {
+            return targets.reduce((closest, t) => {
+                let d = t.pos.sub(pos).mag();
+                return d < (closest ? closest.pos.sub(pos).mag() : Infinity) ? t : closest;
+            }, null);
+        }
+
+        function addParticles(pos, type, count) {
+            const colors = { spark: 'yellow', white: 'white', blue: 'blue' };
+            for (let i = 0; i < count; i++) {
+                let angle = Math.random() * Math.PI * 2;
+                let speed = Math.random() * 100 + 50;
+                let vel = new Vector(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                let color = colors[type] || 'white';
+                particles.push(new Particle(pos.add(new Vector(Math.random() * 10 - 5, Math.random() * 10 - 5)), vel, color, Math.random() * 1 + 0.5));
             }
         }
 
-        // Input handlers
-        window.addEventListener('keydown', e => {
-            keys[e.key.toLowerCase()] = true;
-            if (e.key === ',') {
-                selectedSpell = (selectedSpell + 1) % spells.length;
-                while (!spells[selectedSpell].unlocked && spells.length > 1) {
-                    selectedSpell = (selectedSpell + 1) % spells.length;
+        function getUpgradePool(player) {
+            let availableUnlocks = ABILITIES.map((a, i) => i).filter(i => !player.unlocks.includes(i));
+            let pool = [];
+            const specials = [1,2,3,4,5,6,7,8,9,10,11,12,13]; // indices 1+
+            for (let i = 0; i < 12; i++) { // generate pool
+                if (availableUnlocks.length > 0 && Math.random() < (player.level < 10 ? 0.7 : 0.3)) {
+                    let idx = availableUnlocks.splice(Math.random() * availableUnlocks.length | 0, 1)[0];
+                    pool.push({
+                        name: `Unlock ${ABILITIES[idx].name}`,
+                        apply: () => {
+                            let newAbil = new Ability(ABILITIES[idx].name, ABILITIES[idx].maxCd, ABILITIES[idx].manaCost, ABILITIES[idx].baseDmg, ABILITIES[idx].type, ABILITIES[idx].color, player.pl, idx);
+                            if (specials.includes(idx)) {
+                                player.unlockedAbilities.unshift(newAbil);
+                            } else {
+                                player.unlockedAbilities.push(newAbil);
+                            }
+                            player.unlocks.push(idx);
+                        },
+                        type: 'unlock'
+                    });
+                } else if (player.unlockedAbilities.length > 0) {
+                    let abilIdx = Math.random() * player.unlockedAbilities.length | 0;
+                    let abil = player.unlockedAbilities[abilIdx];
+                    if (Math.random() < 0.5) {
+                        pool.push({
+                            name: `+10 DMG ${abil.name}`,
+                            apply: () => { abil.dmg += 10; },
+                            type: 'buff'
+                        });
+                    } else {
+                        pool.push({
+                            name: `-0.1s CD ${abil.name}`,
+                            apply: () => { abil.maxCd = Math.max(0.1, abil.maxCd - 0.1); },
+                            type: 'buff'
+                        });
+                    }
+                } else {
+                    // Stats rare
+                    if (Math.random() < 0.05 && player.pl < 16) {
+                        pool.push({
+                            name: 'PL +1',
+                            apply: () => { player.pl++; },
+                            type: 'stat'
+                        });
+                    } else if (Math.random() < 0.2) {
+                        pool.push({
+                            name: 'ATK +2',
+                            apply: () => { player.atk += 2; },
+                            type: 'stat'
+                        });
+                    } else if (Math.random() < 0.2) {
+                        pool.push({
+                            name: 'DEF +2',
+                            apply: () => { player.def += 2; },
+                            type: 'stat'
+                        });
+                    } else {
+                        pool.push({
+                            name: 'Shield Yield -0.1',
+                            apply: () => { player.shieldYield = Math.max(0.1, player.shieldYield - 0.1); },
+                            type: 'shield'
+                        });
+                    }
                 }
             }
-            if (e.key === ' ' && !keys[' ']) {
-                // Shield toggle, but hold
+            // Shuffle and take 3 unique
+            for (let i = pool.length - 1; i > 0; i--) {
+                let j = Math.random() * (i + 1) | 0;
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+            return pool.slice(0, 3);
+        }
+
+        function spawnWave() {
+            enemies = [];
+            let num = Math.min(1 + Math.floor((player.level - 1) / 3), 6);
+            let isBossWave = currentWave % 5 === 0;
+            if (isBossWave) num = Math.max(1, num - 1);
+            const types = ['fire', 'ice', 'shadow', 'storm', 'beast'];
+            const colors = { fire: 'red', ice: 'cyan', shadow: 'purple', storm: 'yellow', beast: 'green' };
+            for (let i = 0; i < num; i++) {
+                let side = Math.random() * 4 | 0;
+                let x = side % 2 === 0 ? (Math.random() * GAME_WIDTH) : (side === 0 ? 0 : GAME_WIDTH);
+                let y = side % 2 === 1 ? (Math.random() * GAME_HEIGHT) : (side < 2 ? 0 : GAME_HEIGHT);
+                let type = types[Math.random() * types.length | 0];
+                let e = new Enemy(x, y, colors[type], player.level, type);
+                enemies.push(e);
+            }
+            if (isBossWave) {
+                let bossSide = Math.random() * 4 | 0;
+                let bx = bossSide % 2 === 0 ? (Math.random() * GAME_WIDTH) : (bossSide === 0 ? 0 : GAME_WIDTH);
+                let by = bossSide % 2 === 1 ? (Math.random() * GAME_HEIGHT) : (bossSide < 2 ? 0 : GAME_HEIGHT);
+                let boss = new Enemy(bx, by, 'darkred', player.level, 'boss');
+                boss.isBoss = true;
+                boss.health *= 2;
+                boss.maxHealth *= 2;
+                boss.pl = Math.min(player.pl + 1, 16);
+                boss.size = 15;
+                enemies.push(boss);
+            }
+        }
+
+        // Globals
+        let player = new Player();
+        let enemies = [];
+        let projectiles = [];
+        let particles = [];
+        let keys = {};
+        let mouse = { x: 0, y: 0 };
+        let gameState = 'menu';
+        let currentWave = 1;
+        let upgradePool = [];
+        let screenShake = 0;
+        let upgradeSelected = -1;
+
+        // Events
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if (gameState === 'playing') {
+                if (e.code === 'Space') player.shieldActive = true;
+                if (e.code === 'Comma') player.cycleAbility();
+                if (e.code >= 'Digit1' && e.code <= 'Digit9') player.selectAbility(e.code);
+                if (['KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM'].includes(e.code)) player.selectAbility(e.code);
+            }
+            if (e.code === 'KeyR' && gameState === 'gameOver') {
+                localStorage.removeItem('alternateSave');
+                location.reload();
             }
         });
-
         window.addEventListener('keyup', e => {
-            keys[e.key.toLowerCase()] = false;
+            keys[e.code] = false;
+            if (e.code === 'Space') player.shieldActive = false;
         });
-
         canvas.addEventListener('mousemove', e => {
             const rect = canvas.getBoundingClientRect();
             mouse.x = e.clientX - rect.left;
             mouse.y = e.clientY - rect.top;
         });
-
-        canvas.addEventListener('mousedown', e => {
-            mouse.down = true;
-            if (gameState === 'playing') {
-                player.castSpell(selectedSpell, mouse.x, mouse.y);
-            }
-        });
-
-        canvas.addEventListener('mouseup', e => {
-            mouse.down = false;
-        });
-
-        // Game functions
-        function startGame() {
-            gameState = 'playing';
-            menu.style.display = 'none';
-            loadSave();
-            player = new Player();
-            player.unlocks = saveData.unlocks;
-            nextWave();
-            gameLoop();
-        }
-
-        function viewAttributes() {
-            alert(`PL: ${saveData.pl}\nATK: ${saveData.atk}\nDEF: ${saveData.def}\nUnlocked Spells: ${saveData.unlocks.map(i => spells[i].name).join(', ')}`);
-        }
-
-        function gameOver() {
-            gameState = 'gameOver';
-            menu.innerHTML = '<h1>Game Over</h1><button onclick="location.reload()">Restart</button>';
-            menu.style.display = 'block';
-            saveGame();
-        }
-
-        function nextWave() {
-            currentWave++;
-            let numEnemies = Math.min(1 + Math.floor(currentWave / 3), 6);
-            enemiesInWave = numEnemies;
-            enemies = [];
-            for (let i = 0; i < numEnemies; i++) {
-                let x = Math.random() * 800;
-                let y = Math.random() * 600;
-                let type = Math.floor(Math.random() * 5);
-                let pl = Math.floor(currentWave / 2);
-                enemies.push(new Enemy(x, y, type, pl));
-            }
-            if (currentWave % 5 === 0) {
-                // Boss
-                let boss = new Enemy(400, 300, 0, level + 1);
-                boss.health *= 3;
-                boss.size = 1.5;
-                boss.color = 'red';
-                enemies.push(boss);
-                enemiesInWave++;
-            }
-            // Level up check
-            if (xp >= xpToNext) {
-                level++;
-                xp = 0;
-                xpToNext = level * 100;
-                showUpgrades();
-            }
-        }
-
-        function showUpgrades() {
-            // Pause and show 3 random upgrades
-            gameState = 'paused';
-            let upgrades = generateUpgrades();
-            // For simplicity, auto apply one random
-            let upgrade = upgrades[Math.floor(Math.random() * upgrades.length)];
-            applyUpgrade(upgrade);
-            setTimeout(() => gameState = 'playing', 1000);
-        }
-
-        function generateUpgrades() {
-            let pool = [];
-            // Unlocks
-            for (let i = 0; i < spells.length; i++) {
-                if (!player.unlocks.includes(i)) pool.push({type: 'unlock', index: i});
-            }
-            // Buffs
-            pool.push({type: 'buff', spell: Math.floor(Math.random()*spells.length), value: 'dmg+10'});
-            // Stats rare
-            if (Math.random() < 0.1) pool.push({type: 'stat', stat: 'atk', value: 2});
-            if (Math.random() < 0.1 && player.pl < 16) pool.push({type: 'stat', stat: 'pl', value: 1});
-            return pool.slice(0, 3);
-        }
-
-        function applyUpgrade(upgrade) {
-            if (upgrade.type === 'unlock') {
-                player.unlocks.push(upgrade.index);
-            } else if (upgrade.type === 'buff') {
-                // Apply buff
-                console.log('Buff applied');
-            } else if (upgrade.type === 'stat') {
-                if (upgrade.stat === 'atk') player.atk += upgrade.value;
-                if (upgrade.stat === 'pl') {
-                    player.pl = Math.min(16, player.pl + upgrade.value);
-                    // God mode effects
-                    if (player.pl === 16) {
-                        canvas.style.filter = 'brightness(1.2)';
+        canvas.addEventListener('click', e => {
+            if (gameState === 'playing' && !player.shieldActive) {
+                player.fire(new Vector(mouse.x, mouse.y));
+            } else if (gameState === 'levelUp') {
+                // Select upgrade
+                const btnWidth = 200, btnHeight = 40, startX = 300, startY = 200;
+                upgradeSelected = Math.floor((mouse.y - startY) / (btnHeight + 10));
+                if (upgradeSelected >= 0 && upgradeSelected < 3) {
+                    upgradePool[upgradeSelected].apply(player);
+                    player.save();
+                    gameState = 'playing';
+                }
+            } else if (gameState === 'menu') {
+                const btnY = 300, btnH = 50;
+                if (mouse.y > btnY && mouse.y < btnY + btnH) {
+                    if (mouse.x < 400) { // Play
+                        player.load();
+                        gameState = 'playing';
+                        if (enemies.length === 0) spawnWave();
+                    } else if (mouse.x < 600) { // Attributes
+                        // Toggle view? Simple console for now
+                        console.log('Attributes:', { pl: player.pl, level: player.level, atk: player.atk, def: player.def, unlocks: player.unlocks });
+                    } else { // Restart wipe
+                        if (confirm('Wipe save?')) localStorage.removeItem('alternateSave');
+                        player = new Player();
+                        gameState = 'playing';
+                        spawnWave();
                     }
                 }
             }
-            saveGame();
-        }
+        });
 
-        // Update
-        function update(dt) {
-            if (gameState !== 'playing') return;
-            animationFrame += dt;
-            player.update(dt);
-            enemies.forEach(e => e.update(dt));
-            projectiles = projectiles.filter(p => p.update(dt));
-            particles = particles.filter(p => p.update(dt));
-            // PL effects
-            if (player.pl >= 16) {
-                // Screen shake
-                ctx.save();
-                ctx.translate(Math.random()*4 - 2, Math.random()*4 - 2);
-            }
-            // Mana cost for shield
-            if (player.shieldActive) {
-                player.mana = Math.max(0, player.mana - dt / 100); // drain
-            }
-            // Enemy flee at PL16
-            if (player.pl >= 16) {
-                enemies.forEach(e => {
-                    if (Math.random() < 0.01) {
-                        let fleeAngle = Math.atan2(player.y - e.y, player.x - e.x) + Math.PI;
-                        e.x += Math.cos(fleeAngle) * 50;
-                        e.y += Math.sin(fleeAngle) * 50;
-                    }
-                });
-            }
-        }
-
-        // Render
-        function render() {
-            ctx.clearRect(0, 0, 800, 600);
-
-            // Aim line
-            ctx.strokeStyle = 'gray';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(player.x, player.y);
-            ctx.lineTo(mouse.x, mouse.y);
-            ctx.stroke();
-
-            player.draw();
-            enemies.forEach(e => e.draw());
-            projectiles.forEach(p => p.draw());
-            particles.forEach(p => p.draw());
-
-            if (player.pl >= 16) ctx.restore();
-
-            // UI
-            ui.innerHTML = `
-                Health: ${Math.floor(player.health)}/${player.maxHealth}<br>
-                Mana: ${Math.floor(player.mana)}/${player.maxMana}<br>
-                PL: ${player.pl}<br>
-                ATK: ${player.atk}<br>
-                DEF: ${player.def}<br>
-                Level: ${level}<br>
-                XP: ${xp}/${xpToNext}<br>
-                Wave: ${currentWave}
-            `;
-
-            // Spell list
-            let list = '';
-            spells.forEach((s, i) => {
-                let status = player.unlocks.includes(i) ? 'UNLOCKED' : 'LOCKED';
-                let selected = i === selectedSpell ? ' style="color: lime;"' : '';
-                let cd = s.unlocked ? Math.max(0, (s.cd - (Date.now() - player.lastSpell)) / 1000) : '∞';
-                list += `<div${selected}>${s.name} [${cd}s] - ${status}</div>`;
+        function renderUI(ctx) {
+            // Stats top left
+            ctx.fillStyle = 'white';
+            ctx.font = '16px Arial';
+            ctx.fillText(`Health: ${Math.floor(player.health)}/${player.maxHealth}`, 10, 20);
+            ctx.fillText(`Mana: ${Math.floor(player.mana)}/${player.maxMana}`, 10, 40);
+            ctx.fillText(`PL: ${player.pl}/16`, 10, 60);
+            ctx.fillText(`ATK: ${player.atk} DEF: ${player.def}`, 10, 80);
+            ctx.fillText(`Level: ${player.level} XP: ${player.xp}/${player.xpToNext}`, 10, 100);
+            ctx.fillText(`Wave: ${currentWave}`, 10, 120);
+            // Spells right
+            ctx.fillText('Spells:', 650, 20);
+            player.unlockedAbilities.forEach((a, i) => {
+                let y = 40 + i * 20;
+                ctx.fillStyle = i === player.selectedAbility ? 'lime' : 'gray';
+                let cdText = a.cd > 0 ? ` [${(a.cd).toFixed(1)}s]` : '';
+                ctx.fillText(`${a.name}${cdText}`, 650, y);
             });
-            spellList.innerHTML = list;
+            // Controls bottom
+            ctx.fillStyle = 'white';
+            ctx.fillText('WASD/Arrows: Move | Mouse: Aim/Fire | , : Cycle | SPACE: Shield | 1-9/C-V-B-N-M: Select', 10, 580);
         }
 
-        // Game loop
+        function renderMenu(ctx) {
+            ctx.fillStyle = 'white';
+            ctx.font = '32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText("Alternate's Magical Evolution", GAME_WIDTH / 2, 150);
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'left';
+            const btnY = 300;
+            ['Play', 'Attributes', 'Restart (Wipe)'].forEach((btn, i) => {
+                let x = 200 + i * 200;
+                ctx.strokeStyle = 'white';
+                ctx.strokeRect(x, btnY, 150, 50);
+                ctx.fillText(btn, x + 10, btnY + 30);
+            });
+            ctx.textAlign = 'left';
+        }
+
+        function renderLevelUp(ctx) {
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Level Up! Choose Upgrade', GAME_WIDTH / 2, 150);
+            const btnWidth = 250, btnHeight = 50, startX = (GAME_WIDTH - btnWidth) / 2, startY = 200;
+            upgradePool.forEach((up, i) => {
+                let y = startY + i * (btnHeight + 10);
+                ctx.strokeStyle = i === upgradeSelected ? 'lime' : 'white';
+                ctx.strokeRect(startX, y, btnWidth, btnHeight);
+                ctx.fillStyle = i === upgradeSelected ? 'lime' : 'white';
+                ctx.fillText(up.name, startX + 10, y + 30);
+            });
+            ctx.textAlign = 'left';
+        }
+
+        function renderGameOver(ctx) {
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            ctx.fillStyle = 'red';
+            ctx.font = '32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Game Over', GAME_WIDTH / 2, 250);
+            ctx.font = '20px Arial';
+            ctx.fillText(`Final Level: ${player.level} PL: ${player.pl}`, GAME_WIDTH / 2, 300);
+            ctx.fillText('R to Restart (Wipes Save)', GAME_WIDTH / 2, 350);
+            ctx.textAlign = 'left';
+        }
+
+        // Shuffle helper
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        player.unlocks = [0]; // initial
+
+        // Load on start
+        player.load();
+
+        let lastTime = 0;
         function gameLoop(time) {
-            if (!lastTime) lastTime = time;
-            let dt = time - lastTime;
+            let dt = (time - lastTime) / 1000;
             lastTime = time;
-            update(dt);
-            render();
-            if (gameState === 'playing') requestAnimationFrame(gameLoop);
+            dt = Math.min(dt, 1 / 30); // cap
+
+            // Shake
+            if (screenShake > 0) {
+                ctx.save();
+                ctx.translate(Math.random() * screenShake * 10 - screenShake * 5, Math.random() * screenShake * 10 - screenShake * 5);
+                screenShake -= dt;
+            }
+
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            if (gameState === 'playing') {
+                player.update(dt);
+                enemies.forEach(e => e.update(dt));
+                projectiles.forEach(p => p.update(dt));
+                particles.forEach(p => p.update(dt));
+                // Clean
+                projectiles = projectiles.filter(p => p.life > 0 && p.pos.mag() < 2000);
+                particles = particles.filter(p => p.life > 0);
+                // Render
+                enemies.forEach(e => e.render(ctx));
+                player.render(ctx);
+                projectiles.forEach(p => p.render(ctx));
+                particles.forEach(p => p.render(ctx));
+                renderUI(ctx);
+            } else if (gameState === 'menu') {
+                renderMenu(ctx);
+            } else if (gameState === 'levelUp') {
+                enemies.forEach(e => e.render(ctx));
+                player.render(ctx);
+                projectiles.forEach(p => p.render(ctx));
+                particles.forEach(p => p.render(ctx));
+                renderLevelUp(ctx);
+                renderUI(ctx);
+            } else if (gameState === 'gameOver') {
+                renderGameOver(ctx);
+            }
+
+            if (screenShake > 0) ctx.restore();
+
+            requestAnimationFrame(gameLoop);
         }
 
-        // Init
-        startGame(); // Wait for button, but for demo
+        spawnWave();
+        requestAnimationFrame(gameLoop);
     </script>
 </body>
 </html>
