@@ -79,13 +79,13 @@
 
         function handleClick(x, y) {
             if (gameState === 'menu') {
-                // Play button
-                if (x > canvas.width/2 - 50 && x < canvas.width/2 + 50 && y > canvas.height/2 + 50 && y < canvas.height/2 + 80) {
-                    startGame();
-                }
-                // Shop button
-                if (x > canvas.width/2 - 50 && x < canvas.width/2 + 50 && y > canvas.height/2 && y < canvas.height/2 + 30) {
+                // Shop button - fixed y range to match hover (70-100 offset)
+                if (x > canvas.width/2 - 50 && x < canvas.width/2 + 50 && y > canvas.height/2 + 70 && y < canvas.height/2 + 100) {
                     showShop();
+                }
+                // Play button
+                if (x > canvas.width/2 - 50 && x < canvas.width/2 + 50 && y > canvas.height/2 + 120 && y < canvas.height/2 + 150) {
+                    startGame();
                 }
             } else if (gameState === 'shop') {
                 // Back button
@@ -94,8 +94,9 @@
                 }
                 // Skin buttons
                 skins.forEach((skin, i) => {
-                    const btnY = 200 + i * 40;
-                    if (x > canvas.width/2 - 60 && x < canvas.width/2 + 60 && y > btnY && y < btnY + 30) {
+                    const btnY = 150 + i * 40 - 20;
+                    const btnX = canvas.width - 150;
+                    if (x > btnX - 10 && x < btnX + 50 && y > btnY && y < btnY + 25) {
                         buyOrSelect(skin.name);
                     }
                 });
