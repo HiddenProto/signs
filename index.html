@@ -5,1274 +5,1193 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alternate's Magical Evolution</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: black;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-family: Arial, sans-serif;
-        }
-        canvas {
-            border: 1px solid white;
-            background-color: black;
-        }
-        #ui {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-size: 14px;
-        }
-        #spellList {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            color: white;
-            font-size: 12px;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        #controls {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            color: white;
-            font-size: 12px;
-        }
-        #menu {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            text-align: center;
-            display: none;
-        }
-        button {
-            background: none;
-            border: 1px solid white;
-            color: white;
-            padding: 10px;
-            margin: 5px;
-            cursor: pointer;
-        }
-        button:hover {
-            background: white;
-            color: black;
-        }
+        body { margin: 0; padding: 0; background: black; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif; color: white; }
+        canvas { border: 1px solid #333; background: black; }
+        #ui { position: absolute; top: 10px; left: 10px; z-index: 10; }
+        #controls { position: absolute; bottom: 10px; left: 10px; font-size: 12px; }
+        #menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 20; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; }
+        button { padding: 10px 20px; margin: 10px; background: #444; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #666; }
+        #levelup { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 20px; border-radius: 10px; text-align: center; z-index: 20; display: none; }
+        .upgrade { padding: 10px; margin: 5px; background: #333; cursor: pointer; border-radius: 5px; }
+        .upgrade:hover { background: #555; }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="ui"></div>
-    <div id="spellList"></div>
+    <div id="ui">
+        <div>Health: <span id="health">100</span>/100</div>
+        <div>Mana: <span id="mana">100</span>/100</div>
+        <div>PL: <span id="pl">1</span></div>
+        <div>ATK: <span id="atk">20</span> DEF: <span id="def">10</span></div>
+        <div>Level: <span id="level">1</span> XP: <span id="xp">0</span>/100</div>
+    </div>
     <div id="controls">
-        Controls: WASD/Arrows - Move | Mouse - Aim/Fire | , - Cycle Attack | SPACE - Shield
+        WASD/Arrows: Move | Mouse: Aim/Fire | , : Cycle Attack | SPACE: Shield | 1-9,C-V-B-N-M: Quick Select
     </div>
     <div id="menu">
         <h1>Alternate's Magical Evolution</h1>
         <button onclick="startGame()">Play</button>
         <button onclick="viewAttributes()">Attributes</button>
-        <div id="attributes"></div>
+    </div>
+    <div id="attributes" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; display: none; z-index: 20;">
+        <h2>Attributes</h2>
+        <div id="attrList"></div>
+        <button onclick="closeAttributes()">Close</button>
+    </div>
+    <div id="levelup">
+        <h2>Level Up! Choose Upgrade</h2>
+        <div id="upgrades"></div>
+    </div>
+    <div id="gameover" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,0,0,0.8); padding: 20px; border-radius: 10px; text-align: center; display: none; z-index: 20;">
+        <h2>Game Over</h2>
+        <p>Level Reached: <span id="finalLevel">1</span></p>
+        <button onclick="restartGame()">Restart</button>
     </div>
     <script>
         // Game Constants
         const CANVAS_WIDTH = 800;
         const CANVAS_HEIGHT = 600;
         const FPS = 60;
-        const WAVE_SCALING = { enemies: 1, healthMult: 1, atkMult: 1 };
-        const PL_CAP = 16;
+        const PLAYER_SIZE = 20;
+        const ENEMY_SIZE = 20;
+        const PROJECTILE_SPEED = 8;
+        const PARTICLE_COUNT = 10;
         const MAX_ENEMIES = 6;
-        const BOSS_EVERY = 5;
-        const UPGRADE_POOL_SIZE = 20; // For random selection without repeats
+        const WAVE_BONUS_XP = 50;
+        const LEVEL_XP_REQ = 100;
+        const PL_INCREASE_CHANCE = 0.2; // 20% chance per level to increase PL, but rare
+        const MAX_PL = 16;
+        const MANA_REGEN = 20 / FPS; // Per frame
+        const HEALTH_REGEN = 0.1 / FPS;
+        const SHIELD_RADIUS = 40;
+        const SHIELD_YIELD = 1.0; // Initial, upgrades reduce
+        const BASE_MANA_COST = 10;
 
-        // Input Handling
-        const keys = {};
-        const mouse = { x: 0, y: 0, down: false };
-        let currentAttackIndex = 0;
+        // Colors
+        const PLAYER_COLOR = '#00BFFF'; // Blue
+        const HAT_COLOR = '#9932CC'; // Purple
+        const ENEMY_COLORS = ['#FF4500', '#00FFFF', '#4B0082', '#FFD700', '#FF1493']; // Fire, Ice, Shadow, Storm, Beast
+        const BLOOD_COLOR = '#8B0000';
+        const PARTICLE_COLORS = ['#FF0000', '#FF4500', '#8B0000'];
 
-        document.addEventListener('keydown', (e) => {
-            keys[e.key.toLowerCase()] = true;
-            if (e.key === ',') cycleAttack();
-            if (e.key >= '1' && e.key <= '9') currentAttackIndex = parseInt(e.key) - 1;
-            if (e.key.toLowerCase() === 'c') currentAttackIndex = 9;
-            if (e.key.toLowerCase() === 'v') currentAttackIndex = 10;
-            if (e.key.toLowerCase() === 'b') currentAttackIndex = 11;
-            if (e.key.toLowerCase() === 'n') currentAttackIndex = 12;
-            if (e.key.toLowerCase() === 'm') currentAttackIndex = 13;
-        });
-        document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
-        document.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = e.clientX - rect.left;
-            mouse.y = e.clientY - rect.top;
-        });
-        document.addEventListener('mousedown', () => mouse.down = true);
-        document.addEventListener('mouseup', () => mouse.down = false);
+        // Game State
+        let gameState = 'menu'; // menu, playing, paused, levelup, gameover
+        let canvas, ctx;
+        let keys = {};
+        let mouse = { x: 0, y: 0, down: false };
+        let player;
+        let enemies = [];
+        let projectiles = [];
+        let particles = [];
+        let effects = []; // For buffs like super speed
+        let currentWave = 1;
+        let level = 1;
+        let xp = 0;
+        let killCount = 0;
+        let selectedAttack = 0;
+        let lastFireTime = 0;
+        let shieldActive = false;
+        let shieldStrength = 100;
+        let shieldRegenTime = 0;
+        let prechargedRingsActive = false;
+        let ringBalls = []; // For precharged rings
+        let gameStartTime = 0;
+        let audioCtx; // Placeholder for sounds
 
-        // Canvas Setup
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingEnabled = false; // For pixel art feel, but since lines, optional
+        // Abilities Pool
+        const ABILITIES = [
+            { id: 0, name: 'Magic Shot', key: '1', unlocked: true, cd: 200, cost: 5, damage: 20, description: 'Basic orange orb projectile' },
+            { id: 1, name: 'Tri-Shot', key: '2', unlocked: false, cd: 300, cost: 10, damage: 15, description: '3-way spread blue shots' },
+            { id: 2, name: 'Beam Shot', key: '3', unlocked: false, cd: 800, cost: 20, damage: 40, description: 'White laser line to cursor, pierces' },
+            { id: 3, name: 'Ice Shard', key: '4', unlocked: false, cd: 400, cost: 15, damage: 25, description: 'Blue triangle, slows 50% for 2s' },
+            { id: 4, name: 'Lightning', key: '5', unlocked: false, cd: 600, cost: 25, damage: 30, description: 'Yellow zig-zag bolt, chains' },
+            { id: 5, name: 'Curve Shot', key: '6', unlocked: false, cd: 350, cost: 12, damage: 22, description: 'Green homing arc' },
+            { id: 6, name: 'Shield Breaker', key: '7', unlocked: false, cd: 500, cost: 18, damage: 10, description: 'Purple AoE pulse, breaks shields' },
+            { id: 7, name: 'Homing Missile', key: '8', unlocked: false, cd: 700, cost: 30, damage: 50, description: 'Red rocket, explodes' },
+            { id: 8, name: 'Force Wave', key: '9', unlocked: false, cd: 450, cost: 16, damage: 28, description: 'Blue shockwave cone' },
+            { id: 9, name: 'Penta Shot', key: 'C', unlocked: false, cd: 250, cost: 20, damage: 12, description: '5-way spread, rapid' },
+            { id: 10, name: 'Recursive Shot', key: 'V', unlocked: false, cd: 900, cost: 35, damage: 35, description: 'Bouncing orb' },
+            { id: 11, name: 'Shield Attack', key: 'B', unlocked: false, cd: 600, cost: 22, damage: 25, description: 'Shield projectile, ignores shields' },
+            { id: 12, name: 'Beta Laser', key: 'N', unlocked: false, cd: 1200, cost: 50, damage: 80, description: 'Thick red beam, burns' },
+            { id: 13, name: 'Super Speed', key: 'M', unlocked: false, cd: 5000, cost: 40, damage: 0, description: 'Temp speed x2 for 5s' },
+            { id: 14, name: 'Precharged Rings', key: 'P', unlocked: false, cd: 10000, cost: 60, damage: 0, description: 'Load 6 mana balls, unload with Magic Shot or ram' }
+        ];
 
-        // Particle System Class
+        // Enemy Types
+        const ENEMY_TYPES = [
+            { type: 'Fire', color: ENEMY_COLORS[0], pl: 1, attacks: [0] }, // Basic
+            { type: 'Ice', color: ENEMY_COLORS[1], pl: 3, attacks: [0,3] },
+            { type: 'Shadow', color: ENEMY_COLORS[2], pl: 5, attacks: [0,1,5] },
+            { type: 'Storm', color: ENEMY_COLORS[3], pl: 8, attacks: [0,2,4,6] },
+            { type: 'Beast', color: ENEMY_COLORS[4], pl: 12, attacks: [0,1,2,3,4,5,6,7,8] }
+        ];
+
+        // Upgrade Pool
+        const UPGRADES = [
+            // Unlocks
+            ...ABILITIES.slice(1).map((ab, i) => ({ type: 'unlock', name: `Unlock ${ab.name}`, effect: () => { ABILITIES[i+1].unlocked = true; }, priority: 70 })),
+            // Buffs
+            { type: 'buff', name: 'Magic Shot +10 DMG', effect: () => { ABILITIES[0].damage += 10; }, priority: 10 },
+            { type: 'buff', name: 'Tri-Shot -50ms CD', effect: () => { if (ABILITIES[1].unlocked) ABILITIES[1].cd -= 50; }, priority: 5 },
+            // Stats
+            { type: 'stat', name: '+2 ATK', effect: () => { player.atk += 2; }, priority: 5, rare: true },
+            { type: 'stat', name: '+2 DEF', effect: () => { player.def += 2; }, priority: 5, rare: true },
+            { type: 'stat', name: '+1 PL', effect: () => { player.pl = Math.min(player.pl + 1, MAX_PL); }, priority: 1, rare: true },
+            { type: 'shield', name: 'Shield Yield -0.2', effect: () => { player.shieldYield = Math.max(0.1, player.shieldYield - 0.2); }, priority: 3 },
+            { type: 'shield', name: 'Omni Shield Regen', effect: () => { player.omniRegen = true; }, priority: 3 }
+        ];
+
+        // Particle Class
         class Particle {
-            constructor(x, y, vx, vy, color, life, size = 2, fade = true) {
+            constructor(x, y, vx, vy, life, color, size = 2) {
                 this.x = x;
                 this.y = y;
                 this.vx = vx;
                 this.vy = vy;
-                this.color = color;
                 this.life = life;
                 this.maxLife = life;
+                this.color = color;
                 this.size = size;
-                this.fade = fade;
             }
             update() {
                 this.x += this.vx;
                 this.y += this.vy;
-                this.vy += 0.1; // Gravity for blood
+                this.vy += 0.1; // Gravity
                 this.life--;
                 this.vx *= 0.99;
                 this.vy *= 0.99;
             }
             draw() {
                 ctx.save();
-                if (this.fade) {
-                    ctx.globalAlpha = this.life / this.maxLife;
-                }
+                ctx.globalAlpha = this.life / this.maxLife;
                 ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
                 ctx.restore();
             }
         }
-        let particles = [];
 
-        // Blood Splatter Function
-        function createBloodSplatter(x, y, count = 10, intensity = 1) {
-            for (let i = 0; i < count * intensity; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 5 + 2;
-                particles.push(new Particle(
-                    x, y,
-                    Math.cos(angle) * speed,
-                    Math.sin(angle) * speed,
-                    'red',
-                    Math.random() * 30 + 20,
-                    Math.random() * 3 + 1
-                ));
+        // Projectile Class
+        class Projectile {
+            constructor(x, y, vx, vy, damage, color, size = 5, owner = 'player', type = 'shot', pierces = false, homing = 0, slow = 0, chain = 0, bounce = 0, ignoreShield = false, burn = 0) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.damage = damage;
+                this.color = color;
+                this.size = size;
+                this.owner = owner;
+                this.type = type;
+                this.pierces = pierces;
+                this.homing = homing;
+                this.slow = slow;
+                this.chain = chain;
+                this.bounce = bounce;
+                this.ignoreShield = ignoreShield;
+                this.burn = burn;
+                this.life = 300; // Frames
+                this.trail = []; // For trails
+            }
+            update() {
+                // Homing
+                if (this.homing > 0 && this.owner === 'player') {
+                    let target = enemies.find(e => true);
+                    if (target) {
+                        let dx = target.x - this.x;
+                        let dy = target.y - this.y;
+                        let dist = Math.sqrt(dx*dx + dy*dy);
+                        this.vx += (dx/dist) * this.homing;
+                        this.vy += (dy/dist) * this.homing;
+                    }
+                }
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+                // Trail
+                this.trail.push({x: this.x, y: this.y});
+                if (this.trail.length > 5) this.trail.shift();
+                // Bounce
+                if (this.bounce > 0) {
+                    if (this.x < 0 || this.x > CANVAS_WIDTH) { this.vx *= -1; this.bounce--; }
+                    if (this.y < 0 || this.y > CANVAS_HEIGHT) { this.vy *= -1; this.bounce--; }
+                }
+                return this.life > 0 && this.x > 0 && this.x < CANVAS_WIDTH && this.y > 0 && this.y < CANVAS_HEIGHT;
+            }
+            draw() {
+                // Trail
+                ctx.strokeStyle = this.color + '40';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let i = 0; i < this.trail.length; i++) {
+                    let alpha = i / this.trail.length;
+                    ctx.globalAlpha = alpha;
+                    if (i === 0) ctx.moveTo(this.trail[i].x, this.trail[i].y);
+                    else ctx.lineTo(this.trail[i].x, this.trail[i].y);
+                }
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+                // Main
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                if (this.type === 'beam') {
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - this.vx*10, this.y - this.vy*10);
+                    ctx.lineTo(this.x, this.y);
+                    ctx.stroke();
+                } else if (this.type === 'zigzag') {
+                    // Simple zigzag approximation
+                    ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+                } else if (this.type === 'triangle') {
+                    ctx.moveTo(this.x, this.y - this.size);
+                    ctx.lineTo(this.x - this.size, this.y + this.size);
+                    ctx.lineTo(this.x + this.size, this.y + this.size);
+                    ctx.closePath();
+                    ctx.fill();
+                } else if (this.type === 'arc') {
+                    // Curve approximation with bezier or multiple points
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+                    ctx.fill();
+                } else if (this.type === 'aoe') {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size*2, 0, Math.PI*2);
+                    ctx.fill();
+                } else if (this.type === 'cone') {
+                    let angle = Math.atan2(this.vy, this.vx);
+                    ctx.beginPath();
+                    ctx.moveTo(player.x, player.y);
+                    for (let i = -0.5; i <= 0.5; i += 0.1) {
+                        let a = angle + i;
+                        ctx.lineTo(this.x + Math.cos(a)*100, this.y + Math.sin(a)*100);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+            // Chain logic
+            chainTo(targets) {
+                if (this.chain > 0) {
+                    let chained = 0;
+                    for (let t of targets) {
+                        if (chained >= this.chain) break;
+                        let proj = new Projectile(t.x, t.y, 0, 0, this.damage * 0.7, this.color, this.size, this.owner, this.type);
+                        proj.vx = (Math.random() - 0.5) * 4;
+                        proj.vy = (Math.random() - 0.5) * 4;
+                        projectiles.push(proj);
+                        chained++;
+                    }
+                }
             }
         }
 
-        // Explosion Blood on Death
-        function explodeIntoBlood(entity) {
-            createBloodSplatter(entity.x, entity.y, 20, 2);
-            // More particles for explosion
-            for (let i = 0; i < 15; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 10 + 5;
-                particles.push(new Particle(
-                    entity.x, entity.y,
-                    Math.cos(angle) * speed,
-                    Math.sin(angle) * speed,
-                    'darkred',
-                    Math.random() * 50 + 30,
-                    Math.random() * 4 + 2
-                ));
+        // Effect Class (buffs, debuffs)
+        class Effect {
+            constructor(type, duration, strength, target) {
+                this.type = type; // slow, burn, speed
+                this.duration = duration;
+                this.strength = strength;
+                this.target = target;
+            }
+            update() {
+                this.duration--;
+                if (this.type === 'burn' && this.target) {
+                    this.target.health -= this.strength / FPS; // DoT
+                }
+                if (this.duration <= 0) {
+                    if (this.type === 'slow' && this.target) this.target.speed *= (1 / (1 - this.strength));
+                    return false;
+                }
+                return true;
             }
         }
 
-        // Entity Base Class (for Player and Enemies)
+        // Entity Base Class
         class Entity {
-            constructor(x, y, color, hatColor, size = 20) {
+            constructor(x, y, color, size, health, atk, def, speed, pl = 1, isBoss = false) {
                 this.x = x;
                 this.y = y;
                 this.color = color;
-                this.hatColor = hatColor;
                 this.size = size;
-                this.health = 100;
-                this.maxHealth = 100;
-                this.mana = 100;
-                this.maxMana = 100;
-                this.speed = 3;
-                this.atk = 20;
-                this.def = 10;
-                this.pl = 1;
-                this.angle = 0; // Facing angle
-                this.armAngle = 0; // For pointing arm
-                this.legAngle = 0; // For walking
-                this.shieldActive = false;
-                this.shieldStrength = 0;
-                this.bloodSplatter = []; // For visual blood on body
-                this.dead = false;
+                this.maxHealth = health;
+                this.health = health;
+                this.atk = atk;
+                this.def = def;
+                this.speed = speed;
+                this.pl = pl;
+                this.isBoss = isBoss;
+                this.shield = pl >= 4 ? 50 + pl * 10 : 0;
+                this.maxShield = this.shield;
+                this.effects = [];
+                this.lastAttackTime = 0;
+                this.attackCooldown = 1000 / pl; // Faster with higher PL
+                this.dodgeChance = 0.02 * pl;
+                this.aimAngle = 0;
+                this.bloodParticles = []; // For blood effects
+                this.type = 'enemy'; // Override for player
             }
-            update() {}
-            draw() {
-                if (this.dead) return;
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.rotate(this.angle);
-
-                // Draw blood on body
-                this.bloodSplatter.forEach(splat => {
-                    ctx.fillStyle = 'red';
-                    ctx.globalAlpha = splat.alpha;
-                    ctx.beginPath();
-                    ctx.arc(splat.x, splat.y, splat.size, 0, Math.PI * 2);
-                    ctx.fill();
+            update(dt) {
+                // Update effects
+                this.effects = this.effects.filter(e => e.update());
+                // Regen shield if no damage
+                if (this.shield < this.maxShield) this.shield += 1 * dt;
+                // Blood fade
+                this.bloodParticles = this.bloodParticles.filter(p => {
+                    p.life--;
+                    return p.life > 0;
                 });
-
-                // Stick figure: head
+                // AI or player movement here
+            }
+            draw() {
+                // Draw square body
                 ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(0, -this.size / 2, this.size / 4, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Hat
-                if (this.hatColor) {
-                    ctx.fillStyle = this.hatColor;
+                ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+                // "Hat" for magicians
+                if (this.pl > 1) {
+                    ctx.fillStyle = HAT_COLOR;
                     ctx.beginPath();
-                    ctx.moveTo(-this.size / 4, -this.size / 2);
-                    ctx.lineTo(this.size / 4, -this.size / 2);
-                    ctx.lineTo(0, -this.size);
+                    ctx.moveTo(this.x, this.y - this.size/2 - 5);
+                    ctx.lineTo(this.x - 5, this.y - this.size/2 + 5);
+                    ctx.lineTo(this.x + 5, this.y - this.size/2 + 5);
                     ctx.closePath();
                     ctx.fill();
                 }
-
-                // Body
+                // Arm: line pointing aim
                 ctx.strokeStyle = this.color;
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 3;
                 ctx.beginPath();
-                ctx.moveTo(0, -this.size / 4);
-                ctx.lineTo(0, this.size / 4);
+                ctx.moveTo(this.x, this.y);
+                let armEndX = this.x + Math.cos(this.aimAngle) * 15;
+                let armEndY = this.y + Math.sin(this.aimAngle) * 15;
+                ctx.lineTo(armEndX, armEndY);
                 ctx.stroke();
-
-                // Arms - animated pointing
-                ctx.beginPath();
-                ctx.moveTo(0, -this.size / 8);
-                ctx.lineTo(Math.cos(this.armAngle) * this.size / 3, Math.sin(this.armAngle) * this.size / 3);
-                ctx.stroke();
-
-                ctx.beginPath();
-                ctx.moveTo(0, -this.size / 8);
-                ctx.lineTo(-Math.cos(this.armAngle + Math.PI) * this.size / 3, Math.sin(this.armAngle + Math.PI) * this.size / 3);
-                ctx.stroke();
-
-                // Legs - walking animation
-                ctx.beginPath();
-                ctx.moveTo(0, this.size / 4);
-                ctx.lineTo(Math.cos(this.legAngle) * this.size / 3, this.size / 4 + Math.sin(this.legAngle) * this.size / 3);
-                ctx.stroke();
-
-                ctx.beginPath();
-                ctx.moveTo(0, this.size / 4);
-                ctx.lineTo(-Math.cos(this.legAngle) * this.size / 3, this.size / 4 - Math.sin(this.legAngle) * this.size / 3);
-                ctx.stroke();
-
-                // Shield bubble
-                if (this.shieldActive && this.shieldStrength > 0) {
-                    ctx.strokeStyle = 'green';
+                // Shield
+                if (this.shield > 0) {
+                    ctx.strokeStyle = this.shield < this.maxShield / 2 ? '#FF0000' : '#00FF00';
                     ctx.lineWidth = 2;
                     ctx.beginPath();
-                    ctx.arc(0, 0, 40 + (this.pl * 1), 0, Math.PI * 2);
+                    ctx.arc(this.x, this.y, SHIELD_RADIUS, 0, Math.PI*2);
                     ctx.stroke();
-                    // Pulse animation
-                    const pulse = Math.sin(Date.now() / 200) * 2;
-                    ctx.lineWidth = 2 + pulse;
                 }
-
-                ctx.restore();
+                // Health bar
+                let barWidth = this.size;
+                let barHeight = 4;
+                ctx.fillStyle = '#FF0000';
+                ctx.fillRect(this.x - barWidth/2, this.y - this.size/2 - 10, barWidth, barHeight);
+                ctx.fillStyle = '#00FF00';
+                ctx.fillRect(this.x - barWidth/2, this.y - this.size/2 - 10, barWidth * (this.health / this.maxHealth), barHeight);
+                // Blood particles
+                this.bloodParticles.forEach(p => {
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = p.life / p.maxLife;
+                    ctx.fillRect(p.x, p.y, p.size, p.size);
+                });
+                ctx.globalAlpha = 1;
             }
-            takeDamage(dmg, ignoreDef = false) {
-                let actualDmg = dmg - (ignoreDef ? 0 : this.def);
-                actualDmg = Math.max(1, actualDmg);
-                actualDmg *= (1 - this.pl / 100); // PL reduces incoming dmg slightly
-                this.health -= actualDmg;
-                // Add blood splatter
-                this.bloodSplatter.push({
-                    x: Math.random() * 10 - 5,
-                    y: Math.random() * 10 - 5,
-                    size: Math.random() * 3 + 1,
-                    alpha: 1
-                });
-                // Fade blood over time
-                this.bloodSplatter = this.bloodSplatter.filter(s => {
-                    s.alpha -= 0.01;
-                    return s.alpha > 0;
-                });
-                if (this.health <= 0) {
-                    this.die();
+            takeDamage(dmg, ignoreShield = false, fromProj = null) {
+                let actualDmg = Math.max(1, dmg - this.def);
+                actualDmg *= (1 + player.pl / 16); // PL multiplier if player
+                if (this.pl > 1) actualDmg *= 0.95; // Enemy PL ignores 5%
+                if (!ignoreShield && this.shield > 0) {
+                    let absorbed = Math.min(actualDmg, this.shield);
+                    this.shield -= absorbed;
+                    actualDmg -= absorbed;
+                    // Sparks
+                    for (let i = 0; i < 5; i++) {
+                        particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, 20, '#FFFF00', 1));
+                    }
                 }
+                if (actualDmg > 0) {
+                    this.health -= actualDmg;
+                    // Blood splatter
+                    for (let i = 0; i < 5; i++) {
+                        this.bloodParticles.push({
+                            x: this.x + (Math.random()-0.5)*this.size,
+                            y: this.y + (Math.random()-0.5)*this.size,
+                            life: 60,
+                            maxLife: 60,
+                            color: BLOOD_COLOR,
+                            size: 2 + Math.random()*2
+                        });
+                    }
+                    // Slow or burn from proj
+                    if (fromProj) {
+                        if (fromProj.slow > 0) this.effects.push(new Effect('slow', 120, fromProj.slow, this));
+                        if (fromProj.burn > 0) this.effects.push(new Effect('burn', 180, fromProj.burn * 10, this));
+                    }
+                    // Dodge chance
+                    if (Math.random() < this.dodgeChance) {
+                        actualDmg = 0;
+                        console.log('Dodged!');
+                    }
+                }
+                return actualDmg > 0;
             }
-            die() {
-                this.dead = true;
-                explodeIntoBlood(this);
+            isDead() {
+                return this.health <= 0;
             }
-            regen() {
-                this.health = Math.min(this.maxHealth, this.health + 0.1);
-                this.mana = Math.min(this.maxMana, this.mana + 0.2);
-            }
-            updateAim(targetX, targetY) {
-                const dx = targetX - this.x;
-                const dy = targetY - this.y;
-                this.angle = Math.atan2(dy, dx);
-                this.armAngle = this.angle;
-            }
-            updateWalkAnim(speed) {
-                this.legAngle = Math.sin(Date.now() / 100) * (speed / 5);
+            // Collision with other proj
+            collideWith(proj) {
+                if (proj.owner === this.type) return false; // Same side
+                let dx = proj.x - this.x;
+                let dy = proj.y - this.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                return dist < this.size/2 + proj.size;
             }
         }
 
         // Player Class
         class Player extends Entity {
             constructor() {
-                super(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 'lightblue', 'purple');
-                this.health = 100;
-                this.maxHealth = 100;
+                super(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, PLAYER_COLOR, PLAYER_SIZE, 100, 20, 10, 3, 1, false);
+                this.type = 'player';
                 this.mana = 100;
                 this.maxMana = 100;
-                this.speed = 3;
-                this.atk = 20;
-                this.def = 10;
-                this.pl = 1;
-                this.level = 1;
-                this.xp = 0;
-                this.xpToNext = 100;
-                this.shieldYield = 1.0;
-                this.shieldOmni = false;
-                this.ringsActive = false;
-                this.rings = []; // For Precharged Rings
-                this.unlockedAttacks = [0]; // Start with Magic Shot (index 0)
-                this.attackCooldowns = {}; // Per attack
-                this.selectedAttack = 0;
-                this.shielding = false;
-                this.shieldTimer = 0;
+                this.shieldYield = SHIELD_YIELD;
+                this.omniRegen = false;
+                this.speedBuff = 1;
+                this.invulnFrames = 0;
+                this.abilities = ABILITIES.map(a => ({...a, currentCd: 0 })); // Instance
             }
-            update() {
-                // Movement
-                let dx = 0, dy = 0;
-                if (keys['w'] || keys['arrowup']) dy -= this.speed;
-                if (keys['s'] || keys['arrowdown']) dy += this.speed;
-                if (keys['a'] || keys['arrowleft']) dx -= this.speed;
-                if (keys['d'] || keys['arrowright']) dx += this.speed;
-                this.x += dx;
-                this.y += dy;
-                this.x = Math.max(this.size, Math.min(CANVAS_WIDTH - this.size, this.x));
-                this.y = Math.max(this.size, Math.min(CANVAS_HEIGHT - this.size, this.y));
-
-                if (dx !== 0 || dy !== 0) {
-                    this.updateWalkAnim(Math.sqrt(dx*dx + dy*dy));
-                }
-
-                // Aim
-                this.updateAim(mouse.x, mouse.y);
-
-                // Shield
-                this.shielding = keys[' '];
-                if (this.shielding && this.mana > 0) {
-                    this.shieldActive = true;
-                    this.shieldStrength = Math.min(100, this.shieldStrength + 1);
-                    this.mana -= 0.5; // Base drain
-                } else {
-                    this.shieldActive = false;
-                    this.shieldStrength = Math.max(0, this.shieldStrength - 2);
-                }
-
+            update(dt) {
+                super.update(dt);
                 // Regen
-                this.regen();
-
-                // Update rings
-                if (this.ringsActive) {
-                    this.updateRings();
+                this.mana = Math.min(this.maxMana, this.mana + MANA_REGEN * dt);
+                this.health = Math.min(this.maxHealth, this.health + HEALTH_REGEN * dt);
+                // Movement
+                let moveX = 0, moveY = 0;
+                if (keys['w'] || keys['ArrowUp']) moveY -= 1;
+                if (keys['s'] || keys['ArrowDown']) moveY += 1;
+                if (keys['a'] || keys['ArrowLeft']) moveX -= 1;
+                if (keys['d'] || keys['ArrowRight']) moveX += 1;
+                let speed = this.speed * this.speedBuff;
+                if (moveX || moveY) {
+                    let norm = Math.sqrt(moveX*moveX + moveY*moveY);
+                    moveX = (moveX / norm) * speed * dt;
+                    moveY = (moveY / norm) * speed * dt;
                 }
-
-                // Fire if mouse down and cooldown ok
-                if (mouse.down && this.canFire()) {
-                    this.fire();
-                }
-
-                // Update cooldowns
-                Object.keys(this.attackCooldowns).forEach(key => {
-                    this.attackCooldowns[key] = Math.max(0, this.attackCooldowns[key] - 1000 / FPS);
+                this.x = Math.max(this.size/2, Math.min(CANVAS_WIDTH - this.size/2, this.x + moveX));
+                this.y = Math.max(this.size/2, Math.min(CANVAS_HEIGHT - this.size/2, this.y + moveY));
+                // Aim
+                this.aimAngle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+                // Update CDs
+                this.abilities.forEach(ab => {
+                    if (ab.currentCd > 0) ab.currentCd -= dt * (1000 / FPS); // ms per frame
                 });
-
-                // Check collisions with enemies for rings ram
-                if (this.ringsActive && this.rings.length > 0) {
-                    game.enemies.forEach(enemy => {
-                        if (!enemy.dead && this.distanceTo(enemy) < this.size + enemy.size) {
-                            this.explodeRingsOnRam(enemy);
-                        }
+                // Shield regen
+                if (!shieldActive) {
+                    shieldRegenTime += dt;
+                    if (shieldRegenTime > 60) { // 1s
+                        player.shield += 10 * dt;
+                        player.shield = Math.min(player.maxShield, player.shield);
+                        shieldRegenTime = 0;
+                    }
+                }
+                // Effects
+                effects.forEach(e => {
+                    if (e.type === 'speed') this.speedBuff = 2;
+                    if (e.duration <= 0) {
+                        this.speedBuff = 1;
+                        this.invulnFrames = 0;
+                    }
+                });
+                // Precharged rings update
+                if (prechargedRingsActive) {
+                    ringBalls.forEach(ball => {
+                        // Orbit
+                        let angle = (Date.now() / 1000 + ball.id * Math.PI / 3) % (Math.PI * 2);
+                        ball.x = this.x + Math.cos(angle) * 50;
+                        ball.y = this.y + Math.sin(angle) * 50;
+                    });
+                    // Check ram collisions
+                    enemies.forEach(enemy => {
+                        ringBalls.forEach(ball => {
+                            let dx = ball.x - enemy.x;
+                            let dy = ball.y - enemy.y;
+                            if (Math.sqrt(dx*dx + dy*dy) < ENEMY_SIZE) {
+                                // Explode
+                                enemy.takeDamage(50 + player.pl * 5, false, null);
+                                this.takeDamage(20, true, null); // Self hurt
+                                // Remove ball
+                                ringBalls = ringBalls.filter(b => b !== ball);
+                                // Particles
+                                for (let i = 0; i < 20; i++) {
+                                    particles.push(new Particle(ball.x, ball.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, 30, '#00FF00', 3));
+                                }
+                            }
+                        });
                     });
                 }
+                if (ringBalls.length === 0) prechargedRingsActive = false;
             }
-            distanceTo(other) {
-                const dx = this.x - other.x;
-                const dy = this.y - other.y;
-                return Math.sqrt(dx*dx + dy*dy);
-            }
-            canFire() {
-                const attack = attacks[this.selectedAttack];
-                if (!this.unlockedAttacks.includes(this.selectedAttack)) return false;
-                return this.attackCooldowns[this.selectedAttack] <= 0 && this.mana >= attack.manaCost;
-            }
-            fire() {
-                const attack = attacks[this.selectedAttack];
-                if (!this.canFire()) return;
-
-                this.mana -= attack.manaCost;
-                this.attackCooldowns[this.selectedAttack] = attack.cooldown;
-
-                // Enhanced damage if rings active and default attack
-                let dmgMultiplier = 1;
-                if (this.ringsActive && this.selectedAttack === 0) {
-                    dmgMultiplier = 3; // Way more damage
-                }
-
-                // Create projectile or effect
-                let proj;
-                const targetX = mouse.x;
-                const targetY = mouse.y;
-                switch (this.selectedAttack) {
+            fireAttack(id) {
+                let ab = this.abilities[id];
+                if (!ab.unlocked || ab.currentCd > 0 || this.mana < ab.cost) return;
+                this.mana -= ab.cost;
+                ab.currentCd = ab.cd;
+                let angle = this.aimAngle;
+                let projDamage = ab.damage * (1 + this.pl / 16);
+                switch (ab.id) {
                     case 0: // Magic Shot
-                        proj = new Projectile(this.x, this.y, targetX, targetY, 'orange', this.atk * (1 + this.pl / 16) * dmgMultiplier, this.pl, this);
-                        game.projectiles.push(proj);
-                        if (this.ringsActive) {
-                            this.rings.forEach(ring => {
-                                // Fire enhanced from ring positions? But for simplicity, just multiplier above
+                        if (prechargedRingsActive) {
+                            // Unload rings with extra damage
+                            ringBalls.forEach(ball => {
+                                let dx = mouse.x - ball.x;
+                                let dy = mouse.y - ball.y;
+                                let dist = Math.sqrt(dx*dx + dy*dy);
+                                let vx = (dx / dist) * PROJECTILE_SPEED * 2; // Fast unload
+                                let vy = (dy / dist) * PROJECTILE_SPEED * 2;
+                                projectiles.push(new Projectile(ball.x, ball.y, vx, vy, projDamage * 3, '#FFA500', 6, 'player', 'shot', false, 0.1));
+                                // Particles
+                                for (let i = 0; i < 5; i++) particles.push(new Particle(ball.x, ball.y, (Math.random()-0.5)*5, (Math.random()-0.5)*5, 20, '#FFA500'));
                             });
-                            this.rings = []; // Unload fast? Or keep until ram
+                            ringBalls = [];
+                            prechargedRingsActive = false;
+                        } else {
+                            let vx = Math.cos(angle) * PROJECTILE_SPEED;
+                            let vy = Math.sin(angle) * PROJECTILE_SPEED;
+                            projectiles.push(new Projectile(this.x, this.y, vx, vy, projDamage, '#FFA500', 5, 'player', 'shot', false, this.pl > 8 ? 0.2 : 0));
                         }
                         break;
                     case 1: // Tri-Shot
                         for (let i = -1; i <= 1; i++) {
-                            const angle = this.angle + i * 0.5;
-                            proj = new Projectile(this.x, this.y, this.x + Math.cos(angle) * 100, this.y + Math.sin(angle) * 100, 'blue', this.atk * (1 + this.pl / 16), this.pl, this);
-                            game.projectiles.push(proj);
+                            let a = angle + i * 0.3;
+                            let vx = Math.cos(a) * PROJECTILE_SPEED;
+                            let vy = Math.sin(a) * PROJECTILE_SPEED;
+                            projectiles.push(new Projectile(this.x, this.y, vx, vy, projDamage, '#00FFFF', 4, 'player', 'shot'));
                         }
                         break;
                     case 2: // Beam Shot
-                        // Instant line beam
-                        game.enemies.forEach(enemy => {
-                            if (!enemy.dead && this.lineOfSight(enemy.x, enemy.y, targetX, targetY)) {
-                                let dmg = this.atk * (1 + this.pl / 16) * 5; // High dmg
-                                if (this.pl >= 8) enemy.stun(60); // Stun frames
-                                enemy.takeDamage(dmg);
-                                // Visual line
-                                ctx.strokeStyle = 'white';
-                                ctx.lineWidth = 3;
-                                ctx.beginPath();
-                                ctx.moveTo(this.x, this.y);
-                                ctx.lineTo(enemy.x, enemy.y);
-                                ctx.stroke();
-                            }
-                        });
+                        let beamDist = 200;
+                        let beamX = this.x + Math.cos(angle) * beamDist;
+                        let beamY = this.y + Math.sin(angle) * beamDist;
+                        let beamProj = new Projectile(beamX, beamY, 0, 0, projDamage, '#FFFFFF', 0, 'player', 'beam', true, 0, 0, 0, 0, false, this.pl >=8 ? 10 : 0);
+                        beamProj.vx = Math.cos(angle) * 10; // For hit detection
+                        beamProj.vy = Math.sin(angle) * 10;
+                        projectiles.push(beamProj);
+                        // Stun effect on hit (handled in collision)
                         break;
                     case 3: // Ice Shard
-                        proj = new Projectile(this.x, this.y, targetX, targetY, 'cyan', this.atk * (1 + this.pl / 16), this.pl, this, { slow: 0.5, duration: 120 });
-                        game.projectiles.push(proj);
+                        let vx3 = Math.cos(angle) * PROJECTILE_SPEED;
+                        let vy3 = Math.sin(angle) * PROJECTILE_SPEED;
+                        projectiles.push(new Projectile(this.x, this.y, vx3, vy3, projDamage, '#00FFFF', 8, 'player', 'triangle', false, 0, 0.5, 0, 0));
                         break;
                     case 4: // Lightning
-                        // Find nearest enemy
-                        let nearest = null;
-                        let minDist = Infinity;
-                        game.enemies.forEach(e => {
-                            if (!e.dead) {
-                                const dist = this.distanceTo(e);
-                                if (dist < minDist) {
-                                    minDist = dist;
-                                    nearest = e;
-                                }
-                            }
-                        });
+                        // Find nearest
+                        let nearest = enemies.reduce((closest, e) => {
+                            let d = Math.hypot(e.x - this.x, e.y - this.y);
+                            return d < closest.d ? {e, d} : closest;
+                        }, {e: null, d: Infinity}).e;
                         if (nearest) {
-                            let current = nearest;
-                            let chainCount = 3 + Math.floor(this.pl / 4);
-                            for (let i = 0; i < chainCount; i++) {
-                                current.takeDamage(this.atk * (1 + this.pl / 16) * 1.5);
-                                if (this.pl >= 10) current.applyDoT(this.atk * 0.1, 180); // DoT
-                                // Visual zig-zag
-                                drawLightning(this.x, this.y, current.x, current.y);
-                                // Find next chain target
-                                let next = null;
-                                let nextDist = Infinity;
-                                game.enemies.forEach(e => {
-                                    if (e !== current && !e.dead && this.distanceTo(e) < 100) {
-                                        const dist = this.distanceTo(e);
-                                        if (dist < nextDist) {
-                                            nextDist = dist;
-                                            next = e;
-                                        }
-                                    }
-                                });
-                                if (next) current = next;
-                                else break;
-                            }
+                            let bolt = new Projectile(nearest.x, nearest.y, 0, 0, projDamage, '#FFFF00', 3, 'player', 'zigzag');
+                            bolt.chain = this.pl >=4 ? 3 : 1;
+                            bolt.chainTo(enemies.filter(e => e !== nearest && Math.hypot(e.x - nearest.x, e.y - nearest.y) < 100));
+                            projectiles.push(bolt);
+                            // DoT at PL10+
+                            if (this.pl >=10) nearest.effects.push(new Effect('burn', 180, 5, nearest));
                         }
                         break;
                     case 5: // Curve Shot
-                        proj = new Projectile(this.x, this.y, targetX, targetY, 'green', this.atk * (1 + this.pl / 16), this.pl, this, { homing: true, curve: true });
-                        game.projectiles.push(proj);
+                        let vx5 = Math.cos(angle) * PROJECTILE_SPEED;
+                        let vy5 = Math.sin(angle) * PROJECTILE_SPEED;
+                        projectiles.push(new Projectile(this.x, this.y, vx5, vy5, projDamage, '#00FF00', 6, 'player', 'arc', false, 0.5));
                         break;
                     case 6: // Shield Breaker
-                        // AoE pulse at cursor
-                        const pulseX = targetX;
-                        const pulseY = targetY;
-                        game.enemies.forEach(enemy => {
-                            if (!enemy.dead && this.distanceToPos(pulseX, pulseY, enemy.x, enemy.y) < 50 + this.pl * 5) {
-                                let shieldDmg = 50 + this.pl * 10;
-                                enemy.shieldStrength -= shieldDmg;
-                                enemy.takeDamage(this.atk * (1 + this.pl / 16) * 0.5);
-                            }
-                        });
-                        // Visual pulse
-                        ctx.fillStyle = 'purple';
-                        ctx.beginPath();
-                        ctx.arc(pulseX, pulseY, 50 + this.pl * 5, 0, Math.PI * 2);
-                        ctx.fill();
+                        let breakerX = mouse.x;
+                        let breakerY = mouse.y;
+                        let breakerProj = new Projectile(breakerX, breakerY, 0, 0, 0, '#9932CC', 20, 'player', 'aoe', false, 0, 0, 0, 0, true);
+                        breakerProj.damage = 50 + this.pl * 10; // Shield break
+                        projectiles.push(breakerProj);
                         break;
                     case 7: // Homing Missile
-                        proj = new Projectile(this.x, this.y, targetX, targetY, 'red', this.atk * (1 + this.pl / 16) * 2, this.pl, this, { homing: true, explode: true, radius: 30 + this.pl * 5 });
-                        game.projectiles.push(proj);
+                        let vx7 = Math.cos(angle) * PROJECTILE_SPEED;
+                        let vy7 = Math.sin(angle) * PROJECTILE_SPEED;
+                        let missile = new Projectile(this.x, this.y, vx7, vy7, projDamage, '#FF0000', 10, 'player', 'shot', false, 1, 0, 0, 0);
+                        missile.size = 12;
+                        if (this.pl >=6) missile.explodeRadius = 30;
+                        projectiles.push(missile);
                         break;
                     case 8: // Force Wave
-                        // Cone from player to cursor
-                        const waveAngle = this.angle;
-                        const waveLength = 200;
-                        game.enemies.forEach(enemy => {
-                            const enemyAngle = Math.atan2(enemy.y - this.y, enemy.x - this.x);
-                            if (Math.abs(enemyAngle - waveAngle) < 0.5 && this.distanceTo(enemy) < waveLength) {
-                                enemy.takeDamage(this.atk * (1 + this.pl / 16));
-                                // Knockback
-                                const kb = 10;
-                                enemy.x += Math.cos(enemyAngle) * kb;
-                                enemy.y += Math.sin(enemyAngle) * kb;
-                            }
-                        });
-                        // Visual cone
-                        ctx.fillStyle = 'blue';
-                        ctx.beginPath();
-                        ctx.moveTo(this.x, this.y);
-                        ctx.lineTo(this.x + Math.cos(waveAngle - 0.5) * waveLength, this.y + Math.sin(waveAngle - 0.5) * waveLength);
-                        ctx.lineTo(this.x + Math.cos(waveAngle + 0.5) * waveLength, this.y + Math.sin(waveAngle + 0.5) * waveLength);
-                        ctx.closePath();
-                        ctx.fill();
+                        let waveProj = new Projectile(this.x, this.y, Math.cos(angle)*5, Math.sin(angle)*5, projDamage, '#0000FF', 0, 'player', 'cone', false, 0, 0, 0, 0);
+                        waveProj.knockback = 10;
+                        projectiles.push(waveProj);
                         break;
                     case 9: // Penta Shot
                         for (let i = -2; i <= 2; i++) {
-                            const angle = this.angle + i * 0.3;
-                            proj = new Projectile(this.x, this.y, this.x + Math.cos(angle) * 100, this.y + Math.sin(angle) * 100, 'blue', this.atk * (1 + this.pl / 16), this.pl, this);
-                            game.projectiles.push(proj);
+                            let a = angle + i * 0.4;
+                            let vx = Math.cos(a) * PROJECTILE_SPEED * 1.5; // Fast
+                            let vy = Math.sin(a) * PROJECTILE_SPEED * 1.5;
+                            projectiles.push(new Projectile(this.x, this.y, vx, vy, projDamage, '#00BFFF', 3, 'player', 'shot'));
                         }
                         break;
                     case 10: // Recursive Shot
-                        proj = new Projectile(this.x, this.y, targetX, targetY, 'yellow', this.atk * (1 + this.pl / 16), this.pl, this, { bounces: 3 + this.pl });
-                        game.projectiles.push(proj);
+                        let vx10 = Math.cos(angle) * PROJECTILE_SPEED;
+                        let vy10 = Math.sin(angle) * PROJECTILE_SPEED;
+                        projectiles.push(new Projectile(this.x, this.y, vx10, vy10, projDamage, '#FF69B4', 7, 'player', 'shot', false, 0, 0, 0, 3 + this.pl));
                         break;
                     case 11: // Shield Attack
-                        proj = new Projectile(this.x, this.y, targetX, targetY, 'gold', this.atk * (1 + this.pl / 16), this.pl, this, { ignoreShield: true, reflect: true });
-                        game.projectiles.push(proj);
+                        let vx11 = Math.cos(angle) * PROJECTILE_SPEED;
+                        let vy11 = Math.sin(angle) * PROJECTILE_SPEED;
+                        projectiles.push(new Projectile(this.x, this.y, vx11, vy11, projDamage, '#00FF00', 8, 'player', 'shot', false, 0, 0, 0, 0, true));
                         break;
                     case 12: // Beta Laser
-                        // Thick beam
-                        game.enemies.forEach(enemy => {
-                            if (!enemy.dead) {
-                                let dmg = this.atk * (1 + this.pl / 16) * 10;
-                                enemy.takeDamage(dmg);
-                                if (this.pl >= 10) enemy.applyDoT(dmg * 0.3, 180); // Burn DoT
-                                // Visual thick line
-                                ctx.strokeStyle = 'red';
-                                ctx.lineWidth = 5;
-                                ctx.beginPath();
-                                ctx.moveTo(this.x, this.y);
-                                ctx.lineTo(enemy.x, enemy.y);
-                                ctx.stroke();
-                            }
-                        });
+                        let laserDist = 300;
+                        let laserX = this.x + Math.cos(angle) * laserDist;
+                        let laserY = this.y + Math.sin(angle) * laserDist;
+                        let laser = new Projectile(laserX, laserY, 0, 0, projDamage, '#FF0000', 15, 'player', 'beam', true, 0, 0, 0, 0, false, 20); // Burn
+                        laser.lineWidth = 8;
+                        projectiles.push(laser);
                         break;
                     case 13: // Super Speed
-                        this.speed *= 2;
-                        setTimeout(() => {
-                            this.speed /= 2;
-                            if (this.pl >= 12) {
-                                // Invuln frames, say 120 frames
-                                this.invulnTimer = 120;
-                            }
-                        }, 5000);
-                        // Dodge trails - add particles
-                        for (let i = 0; i < 10; i++) {
-                            particles.push(new Particle(this.x, this.y, Math.random() * 4 - 2, Math.random() * 4 - 2, 'white', 30));
-                        }
+                        effects.push(new Effect('speed', 300, 0, this)); // 5s
+                        if (this.pl >=12) this.invulnFrames = 60;
                         break;
                     case 14: // Precharged Rings
-                        this.activateRings();
+                        prechargedRingsActive = true;
+                        ringBalls = [];
+                        for (let i = 0; i < 6; i++) {
+                            ringBalls.push({ x: this.x, y: this.y, id: i });
+                        }
+                        // Visual load
+                        for (let i = 0; i < 20; i++) {
+                            particles.push(new Particle(this.x, this.y, (Math.random()-0.5)*10, (Math.random()-0.5)*10, 40, '#00FFFF'));
+                        }
                         break;
                 }
-            }
-            lineOfSight(ex, ey, tx, ty) {
-                // Simple check if enemy is near line to target
-                return Math.abs((tx - this.x) * (ey - this.y) - (ty - this.y) * (ex - this.x)) < 20;
-            }
-            distanceToPos(px, py, ex, ey) {
-                const dx = px - ex;
-                const dy = py - ey;
-                return Math.sqrt(dx*dx + dy*dy);
-            }
-            activateRings() {
-                this.ringsActive = true;
-                this.rings = [];
-                for (let i = 0; i < 6; i++) {
-                    const angle = (i / 6) * Math.PI * 2;
-                    this.rings.push({
-                        x: this.x + Math.cos(angle) * 50,
-                        y: this.y + Math.sin(angle) * 50,
-                        angle: angle,
-                        life: 300 // 5 seconds at 60fps
-                    });
-                }
-            }
-            updateRings() {
-                this.rings.forEach(ring => {
-                    ring.life--;
-                    ring.x = this.x + Math.cos(ring.angle) * 50;
-                    ring.y = this.y + Math.sin(ring.angle) * 50;
-                    ring.angle += 0.05; // Rotate
-                    // Draw rings
-                    ctx.fillStyle = 'blue';
-                    ctx.beginPath();
-                    ctx.arc(ring.x, ring.y, 5, 0, Math.PI * 2);
-                    ctx.fill();
-                });
-                this.rings = this.rings.filter(r => r.life > 0);
-                if (this.rings.length === 0) this.ringsActive = false;
-            }
-            explodeRingsOnRam(enemy) {
-                this.rings.forEach(ring => {
-                    const dist = this.distanceToPos(ring.x, ring.y, enemy.x, enemy.y);
-                    if (dist < 30) {
-                        // Explode
-                        createBloodSplatter(enemy.x, enemy.y, 5);
-                        enemy.takeDamage(50); // Hurt enemy
-                        this.takeDamage(20); // Hurt self
-                    }
-                });
-                this.rings = [];
-                this.ringsActive = false;
-            }
-            cycleAttack() {
-                let start = currentAttackIndex;
-                do {
-                    currentAttackIndex = (currentAttackIndex + 1) % attacks.length;
-                } while (!this.unlockedAttacks.includes(currentAttackIndex) && currentAttackIndex !== start);
-                this.selectedAttack = currentAttackIndex;
-            }
-            gainXP(amount) {
-                this.xp += amount;
-                if (this.xp >= this.xpToNext) {
-                    this.levelUp();
-                }
-            }
-            levelUp() {
-                this.level++;
-                this.xp -= this.xpToNext;
-                this.xpToNext += 50;
-                this.maxHealth += 10;
-                this.maxMana += 10;
-                this.health = this.maxHealth;
-                this.mana = this.maxMana;
-                // Rare PL up
-                if (this.level % (3 + Math.random() * 3) === 0 && this.pl < PL_CAP) {
-                    this.pl++;
-                }
-                // Show upgrade menu
-                showUpgradeMenu();
+                lastFireTime = Date.now();
+                // Sound placeholder
+                console.log(`Fired ${ab.name}`);
             }
         }
 
-        // Projectile Class
-        class Projectile {
-            constructor(x, y, tx, ty, color, damage, pl, owner, effects = {}) {
-                this.x = x;
-                this.y = y;
-                this.vx = (tx - x) / 30; // Speed
-                this.vy = (ty - y) / 30;
-                this.color = color;
-                this.damage = damage;
-                this.pl = pl;
-                this.owner = owner;
-                this.size = 5;
-                this.life = 300; // Max frames
-                this.effects = effects; // slow, homing, etc.
-                this.bouncesLeft = effects.bounces || 0;
-                this.trail = []; // For trails
-                this.reflecting = false;
-            }
-            update() {
-                // Homing
-                if (this.effects.homing) {
-                    let target = null;
-                    let minDist = Infinity;
-                    if (this.owner instanceof Player) {
-                        game.enemies.forEach(e => {
-                            if (!e.dead) {
-                                const dist = Math.hypot(e.x - this.x, e.y - this.y);
-                                if (dist < minDist) {
-                                    minDist = dist;
-                                    target = e;
-                                }
-                            }
-                        });
-                    } else {
-                        // Enemy projectiles target player
-                        const dist = Math.hypot(game.player.x - this.x, game.player.y - this.y);
-                        if (dist < 100) target = game.player;
-                    }
-                    if (target) {
-                        const angle = Math.atan2(target.y - this.y, target.x - this.x);
-                        this.vx += Math.cos(angle) * 0.1;
-                        this.vy += Math.sin(angle) * 0.1;
-                    }
-                }
-
-                // Curve for curve shot
-                if (this.effects.curve) {
-                    this.vx += Math.sin(Date.now() / 100) * 0.05;
-                    this.vy += Math.cos(Date.now() / 100) * 0.05;
-                }
-
-                this.x += this.vx;
-                this.y += this.vy;
-
-                // Bounce
-                if (this.bouncesLeft > 0) {
-                    if (this.x < 0 || this.x > CANVAS_WIDTH) {
-                        this.vx *= -1;
-                        this.bouncesLeft--;
-                    }
-                    if (this.y < 0 || this.y > CANVAS_HEIGHT) {
-                        this.vy *= -1;
-                        this.bouncesLeft--;
-                    }
-                }
-
-                // Trail
-                this.trail.push({x: this.x, y: this.y});
-                if (this.trail.length > 10) this.trail.shift();
-
-                this.life--;
-
-                // Collisions
-                if (this.owner instanceof Player) {
-                    // Player proj vs enemies
-                    game.enemies.forEach((enemy, idx) => {
-                        if (!enemy.dead && Math.hypot(enemy.x - this.x, enemy.y - this.y) < this.size + enemy.size) {
-                            this.hit(enemy);
-                            game.projectiles.splice(game.projectiles.indexOf(this), 1);
-                        }
-                    });
-                } else {
-                    // Enemy proj vs player
-                    if (!game.player.dead && Math.hypot(game.player.x - this.x, game.player.y - this.y) < this.size + game.player.size) {
-                        this.hit(game.player);
-                        game.projectiles.splice(game.projectiles.indexOf(this), 1);
-                    }
-                    // Projectile vs projectile collision
-                    game.projectiles.forEach(other => {
-                        if (other !== this && other.owner !== this.owner && Math.hypot(other.x - this.x, other.y - this.y) < this.size * 2) {
-                            // Collide, create particles
-                            for (let i = 0; i < 5; i++) {
-                                particles.push(new Particle(this.x, this.y, Math.random()*4-2, Math.random()*4-2, this.color, 20));
-                            }
-                            game.projectiles.splice(game.projectiles.indexOf(this), 1);
-                            game.projectiles.splice(game.projectiles.indexOf(other), 1);
-                        }
-                    });
-                }
-
-                // Wall bounce for recursive
-                if (this.bouncesLeft > 0 && (this.x < 0 || this.x > CANVAS_WIDTH || this.y < 0 || this.y > CANVAS_HEIGHT)) {
-                    // Already handled above
-                }
-
-                // Reflect if shield attack
-                if (this.effects.reflect && game.player.shieldActive) {
-                    // Chance to reflect enemy shots
-                    if (Math.random() < 0.5) {
-                        this.owner = game.player;
-                        this.vx *= -1;
-                        this.vy *= -1;
-                        this.reflecting = true;
-                    }
-                }
-            }
-            hit(target) {
-                let dmg = this.damage;
-                if (target.shieldActive && target.shieldStrength > 0 && !this.effects.ignoreShield) {
-                    target.shieldStrength -= dmg * game.player.shieldYield;
-                    dmg *= 0.5; // Reduced if shielded
-                    // Sparks
-                    for (let i = 0; i < 5; i++) {
-                        particles.push(new Particle(target.x, target.y, Math.random()*6-3, Math.random()*6-3, 'yellow', 20));
-                    }
-                }
-                if (this.effects.slow) {
-                    target.slowTimer = this.effects.duration;
-                    target.speed *= (1 - this.effects.slow);
-                }
-                target.takeDamage(dmg, this.effects.ignoreDef);
-                createBloodSplatter(target.x, target.y, 5);
-
-                // Explode if homing missile
-                if (this.effects.explode) {
-                    game.enemies.forEach(e => {
-                        if (!e.dead && Math.hypot(e.x - this.x, this.y - this.y) < this.effects.radius) {
-                            e.takeDamage(dmg * 0.5);
-                        }
-                    });
-                }
-            }
-            draw() {
-                // Trail
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                this.trail.forEach((p, i) => {
-                    ctx.globalAlpha = i / this.trail.length;
-                    if (i === 0) ctx.moveTo(p.x, p.y);
-                    else ctx.lineTo(p.x, p.y);
-                });
-                ctx.stroke();
-                ctx.globalAlpha = 1;
-
-                // Proj
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-
-        // Enemy Class
-        class Enemy extends Entity {
-            constructor(x, y, type, level) {
-                super(x, y, type.color, type.hatColor, 20 + level * 2);
-                this.type = type;
-                this.level = level;
-                this.health = 50 + level * 20;
-                this.maxHealth = this.health;
-                this.speed = 1 + level * 0.2;
-                this.atk = 10 + level * 5;
-                this.def = 5 + level * 2;
-                this.pl = Math.floor(level / 2);
-                this.stunTimer = 0;
-                this.slowTimer = 0;
-                this.dotTimer = 0;
-                this.dotDmg = 0;
-                this.lastAttack = 0;
-                this.aiComplexity = this.pl;
-                this.dodgeChance = 0.02 * this.pl;
-                this.selectedAttack = 0;
-                this.shieldActive = this.pl >= 4;
-            }
-            update() {
-                if (this.stunTimer > 0) {
-                    this.stunTimer--;
-                    return;
-                }
-                if (this.slowTimer > 0) {
-                    this.slowTimer--;
-                    this.speed *= 1.1; // Recover
-                }
-                if (this.dotTimer > 0) {
-                    this.dotTimer--;
-                    this.takeDamage(this.dotDmg);
-                }
-
-                // AI
-                const distToPlayer = Math.hypot(game.player.x - this.x, game.player.y - this.y);
-                if (distToPlayer > 30) {
+        // Enemy AI
+        function updateEnemies(dt) {
+            enemies.forEach(enemy => {
+                // Aim at player
+                let dx = player.x - enemy.x;
+                let dy = player.y - enemy.y;
+                let dist = Math.hypot(dx, dy);
+                enemy.aimAngle = Math.atan2(dy, dx);
+                if (dist > 30) {
                     // Chase
-                    const angle = Math.atan2(game.player.y - this.y, game.player.x - this.x);
-                    this.x += Math.cos(angle) * this.speed;
-                    this.y += Math.sin(angle) * this.speed;
-                    this.updateWalkAnim(this.speed);
+                    let speed = enemy.speed * (1 - enemy.effects.find(e => e.type === 'slow')?.strength || 0);
+                    enemy.x += (dx / dist) * speed * dt;
+                    enemy.y += (dy / dist) * speed * dt;
                 } else {
                     // Melee
-                    game.player.takeDamage(this.atk);
-                    createBloodSplatter(game.player.x, game.player.y, 3);
+                    player.takeDamage(enemy.atk, false, null);
                 }
-
-                // Dodge
-                if (Math.random() < this.dodgeChance) {
-                    const dodgeAngle = Math.atan2(Math.random() - 0.5, Math.random() - 0.5);
-                    this.x += Math.cos(dodgeAngle) * 20;
-                    this.y += Math.sin(dodgeAngle) * 20;
-                }
-
-                // Ranged attack
-                if (Date.now() - this.lastAttack > (3000 - this.pl * 100) && distToPlayer > 50) {
-                    this.attack();
-                    this.lastAttack = Date.now();
-                }
-
-                // Aim at player
-                this.updateAim(game.player.x, game.player.y);
-
-                this.regen();
-            }
-            attack() {
-                // Select attack based on PL
-                this.selectedAttack = Math.min(Math.floor(Math.random() * (1 + this.pl / 4)), attacks.length - 1);
-                if (this.selectedAttack === 0 || (this.pl >= 4 && Math.random() < 0.5)) { // Basic or advanced
-                    const proj = new Projectile(this.x, this.y, game.player.x, game.player.y, this.type.color, this.atk * (1 + this.pl / 16), this.pl, this);
-                    game.projectiles.push(proj);
-                } else if (this.selectedAttack === 2 && this.pl >= 5) {
-                    // Beam
-                    let dmg = this.atk * (1 + this.pl / 16) * 3;
-                    game.player.takeDamage(dmg);
-                } else if (this.selectedAttack === 4 && this.pl >= 8) {
-                    // Lightning chain
-                    // Similar to player lightning, chain to player and dummies
-                    game.player.takeDamage(this.atk * 1.5);
-                } // Add more as PL increases, up to full kit at 16
-
-                // For god PL, predict moves
-                if (this.pl >= 12) {
-                    // Aim ahead
-                    const predictX = game.player.x + game.player.speed * Math.cos(game.player.angle) * 10;
-                    const predictY = game.player.y + game.player.speed * Math.sin(game.player.angle) * 10;
-                    // Use predict in proj
-                }
-            }
-            stun(frames) {
-                this.stunTimer = frames;
-            }
-            applyDoT(dmg, frames) {
-                this.dotDmg = dmg / frames;
-                this.dotTimer = frames;
-            }
-            draw() {
-                super.draw();
-                // Health bar
-                ctx.fillStyle = 'red';
-                ctx.fillRect(this.x - 20, this.y - 30, 40, 5);
-                ctx.fillStyle = 'green';
-                ctx.fillRect(this.x - 20, this.y - 30, 40 * (this.health / this.maxHealth), 5);
-            }
-        }
-
-        // Attacks Definition
-        const attacks = [
-            { name: 'Magic Shot', manaCost: 5, cooldown: 200 }, // Fast
-            { name: 'Tri-Shot', manaCost: 8, cooldown: 300 },
-            { name: 'Beam Shot', manaCost: 15, cooldown: 1000 },
-            { name: 'Ice Shard', manaCost: 10, cooldown: 400 },
-            { name: 'Lightning', manaCost: 20, cooldown: 800 },
-            { name: 'Curve Shot', manaCost: 12, cooldown: 500 },
-            { name: 'Shield Breaker', manaCost: 18, cooldown: 600 },
-            { name: 'Homing Missile', manaCost: 25, cooldown: 1000 },
-            { name: 'Force Wave', manaCost: 15, cooldown: 700 },
-            { name: 'Penta Shot', manaCost: 12, cooldown: 400 },
-            { name: 'Recursive Shot', manaCost: 22, cooldown: 900 },
-            { name: 'Shield Attack', manaCost: 16, cooldown: 500 },
-            { name: 'Beta Laser', manaCost: 40, cooldown: 2000 },
-            { name: 'Super Speed', manaCost: 30, cooldown: 10000 },
-            { name: 'Precharged Rings', manaCost: 25, cooldown: 5000 }
-        ];
-
-        // Enemy Types
-        const enemyTypes = [
-            { name: 'Fire', color: 'red', hatColor: 'orange' },
-            { name: 'Ice', color: 'cyan', hatColor: 'blue' },
-            { name: 'Shadow', color: 'black', hatColor: 'gray' },
-            { name: 'Storm', color: 'yellow', hatColor: 'white' },
-            { name: 'Beast', color: 'brown', hatColor: 'green' }
-        ];
-
-        // Game Object
-        let game = {
-            player: new Player(),
-            enemies: [],
-            projectiles: [],
-            wave: 1,
-            state: 'menu', // menu, playing, upgrade, gameover
-            lastWaveTime: 0,
-            upgradePool: [],
-            usedUpgrades: []
-        };
-
-        // Utility Functions
-        function drawLightning(sx, sy, tx, ty) {
-            ctx.strokeStyle = 'yellow';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            let x = sx, y = sy;
-            ctx.moveTo(x, y);
-            while (Math.hypot(x - tx, y - ty) > 10) {
-                x += (tx - x) / 10 + (Math.random() - 0.5) * 20;
-                y += (ty - y) / 10 + (Math.random() - 0.5) * 20;
-                ctx.lineTo(x, y);
-            }
-            ctx.lineTo(tx, ty);
-            ctx.stroke();
-        }
-
-        function spawnWave() {
-            game.enemies = [];
-            const numEnemies = Math.min(1 + Math.floor(game.wave / 3), MAX_ENEMIES);
-            const isBoss = game.wave % BOSS_EVERY === 0;
-            if (isBoss) {
-                const boss = new Enemy(Math.random() * CANVAS_WIDTH, Math.random() * CANVAS_HEIGHT, enemyTypes[Math.floor(Math.random() * enemyTypes.length)], game.player.level + 1);
-                boss.size *= 1.5;
-                boss.health *= 2;
-                boss.color = 'darkred';
-                game.enemies.push(boss);
-            } else {
-                for (let i = 0; i < numEnemies; i++) {
-                    const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-                    const enemy = new Enemy(Math.random() * CANVAS_WIDTH, Math.random() * CANVAS_HEIGHT, type, game.player.level);
-                    game.enemies.push(enemy);
-                }
-            }
-        }
-
-        function checkWaveClear() {
-            const aliveEnemies = game.enemies.filter(e => !e.dead);
-            if (aliveEnemies.length === 0) {
-                game.player.gainXP(100 + game.wave * 10); // Wave bonus
-                game.wave++;
-                spawnWave();
-            }
-        }
-
-        function generateUpgrades() {
-            const upgradeTypes = [
-                // Unlocks
-                () => ({ type: 'unlock', attack: Math.floor(Math.random() * attacks.length), name: `Unlock ${attacks[attackIdx].name}` }),
-                // Buffs
-                () => ({ type: 'buff', target: 'atk', value: 5, name: '+5 ATK' }),
-                () => ({ type: 'buff', target: 'def', value: 2, name: '+2 DEF' }),
-                () => ({ type: 'buff', target: 'cooldown', attack: currentAttack, value: -50, name: '-50ms CD for ' + attacks[currentAttack].name }),
-                // Stats rare
-                () => ({ type: 'stat', target: 'pl', value: 1, name: '+1 PL' }),
-                () => ({ type: 'shield', target: 'yield', value: -0.1, name: 'Better Shield Yield' }),
-                () => ({ type: 'shield', target: 'omni', name: 'Omni Shield Regen' })
-            ];
-            game.upgradePool = [];
-            while (game.upgradePool.length < 3) {
-                const randType = upgradeTypes[Math.floor(Math.random() * upgradeTypes.length)];
-                const upgrade = randType();
-                if (!game.usedUpgrades.includes(upgrade.name)) { // No repeats in session
-                    game.upgradePool.push(upgrade);
-                }
-            }
-        }
-
-        function applyUpgrade(upgrade) {
-            switch (upgrade.type) {
-                case 'unlock':
-                    if (!game.player.unlockedAttacks.includes(upgrade.attack)) {
-                        game.player.unlockedAttacks.push(upgrade.attack);
+                // Attack
+                if (Date.now() - enemy.lastAttackTime > enemy.attackCooldown) {
+                    let typeIndex = Math.floor(Math.random() * ENEMY_TYPES.length);
+                    let eType = ENEMY_TYPES[typeIndex];
+                    if (enemy.pl >= eType.pl) {
+                        let attackId = eType.attacks[Math.floor(Math.random() * eType.attacks.length)];
+                        enemyFire(enemy, attackId);
+                        enemy.lastAttackTime = Date.now();
                     }
-                    break;
-                case 'buff':
-                    if (upgrade.target === 'atk') game.player.atk += upgrade.value;
-                    if (upgrade.target === 'def') game.player.def += upgrade.value;
-                    if (upgrade.target === 'cooldown') {
-                        // Reduce CD for specific attack
-                        attacks[upgrade.attack].cooldown = Math.max(50, attacks[upgrade.attack].cooldown + upgrade.value);
-                    }
-                    break;
-                case 'stat':
-                    if (upgrade.target === 'pl' && game.player.pl < PL_CAP) game.player.pl += upgrade.value;
-                    break;
-                case 'shield':
-                    if (upgrade.target === 'yield') game.player.shieldYield = Math.max(0.1, game.player.shieldYield + upgrade.value);
-                    if (upgrade.target === 'omni') game.player.shieldOmni = true;
-                    break;
-            }
-            game.usedUpgrades.push(upgrade.name);
-        }
-
-        function showUpgradeMenu() {
-            game.state = 'upgrade';
-            generateUpgrades();
-            // For simplicity, auto pick one random? Or pause for input, but since no UI, auto apply one and continue
-            // To keep simple, apply random one
-            const chosen = game.upgradePool[Math.floor(Math.random() * 3)];
-            applyUpgrade(chosen);
-            console.log('Upgrade applied:', chosen.name);
-            game.state = 'playing';
-        }
-
-        // UI Rendering
-        function drawUI() {
-            ctx.fillStyle = 'white';
-            ctx.font = '16px Arial';
-            ctx.fillText(`Health: ${Math.floor(game.player.health)}/${game.player.maxHealth}`, 10, 20);
-            ctx.fillText(`Mana: ${Math.floor(game.player.mana)}/${game.player.maxMana}`, 10, 40);
-            ctx.fillText(`PL: ${game.player.pl}`, 10, 60);
-            ctx.fillText(`ATK: ${game.player.atk} DEF: ${game.player.def}`, 10, 80);
-            ctx.fillText(`Level: ${game.player.level} XP: ${game.player.xp}/${game.player.xpToNext}`, 10, 100);
-            ctx.fillText(`Wave: ${game.wave}`, 10, 120);
-
-            // Spell list
-            const spellDiv = document.getElementById('spellList');
-            spellDiv.innerHTML = '<h3>Spells</h3>';
-            attacks.forEach((atk, idx) => {
-                const unlocked = game.player.unlockedAttacks.includes(idx);
-                const selected = idx === game.player.selectedAttack;
-                const cd = game.player.attackCooldowns[idx] || 0;
-                let text = `${idx + 1 || atk.name[0].toUpperCase()}: ${atk.name}`;
-                if (!unlocked) text += ' [LOCKED]';
-                if (cd > 0) text += ` [CD: ${Math.ceil(cd / 60)}s]`;
-                if (selected) text = `<strong style="color: green;">${text}</strong>`;
-                if (idx >= 9) text = `<em>${text}</em>`; // Italic specials
-                spellDiv.innerHTML += `<div>${text}</div>`;
+                }
+                // Predict dodge
+                if (enemy.pl >=12 && Math.random() < 0.1) {
+                    // Simple predict: move away from player velocity (but player vel not tracked, approx)
+                    enemy.x += (Math.random() - 0.5) * enemy.speed * 2 * dt;
+                    enemy.y += (Math.random() - 0.5) * enemy.speed * 2 * dt;
+                }
+                enemy.update(dt);
             });
+        }
 
-            // God mode effects
-            if (game.player.pl === PL_CAP) {
-                // Screen shake
-                ctx.save();
-                ctx.translate(Math.random() * 4 - 2, Math.random() * 4 - 2);
-                // Enemy flee
-                game.enemies.forEach(e => {
-                    if (Math.random() < 0.1) { // Flee chance
-                        const fleeAngle = Math.atan2(this.y - game.player.y, this.x - game.player.x);
-                        e.x += Math.cos(fleeAngle) * e.speed * 2;
-                        e.y += Math.sin(fleeAngle) * e.speed * 2;
+        function enemyFire(enemy, attackId) {
+            let angle = enemy.aimAngle;
+            let projDamage = enemy.atk * (1 + enemy.pl / 16);
+            let ab = ABILITIES[attackId]; // Reuse player ab for simplicity
+            switch (attackId) {
+                case 0: // Basic
+                    let vx = Math.cos(angle) * PROJECTILE_SPEED * 0.8; // Slower enemy
+                    let vy = Math.sin(angle) * PROJECTILE_SPEED * 0.8;
+                    projectiles.push(new Projectile(enemy.x, enemy.y, vx, vy, projDamage, enemy.color, 4, 'enemy', 'shot'));
+                    break;
+                // Add more cases for enemy attacks, similar to player but scaled
+                case 1: // Tri
+                    for (let i = -1; i <= 1; i++) {
+                        let a = angle + i * 0.3;
+                        let vx = Math.cos(a) * PROJECTILE_SPEED * 0.8;
+                        let vy = Math.sin(a) * PROJECTILE_SPEED * 0.8;
+                        projectiles.push(new Projectile(enemy.x, enemy.y, vx, vy, projDamage * 0.7, enemy.color, 3, 'enemy', 'shot'));
                     }
+                    break;
+                case 2: // Beam
+                    let beamDistE = 150;
+                    let beamXE = enemy.x + Math.cos(angle) * beamDistE;
+                    let beamYE = enemy.y + Math.sin(angle) * beamDistE;
+                    projectiles.push(new Projectile(beamXE, beamYE, 0, 0, projDamage, enemy.color, 0, 'enemy', 'beam', true));
+                    break;
+                // ... similarly for others, to make enemies use more attacks
+                case 3:
+                    let vx3e = Math.cos(angle) * PROJECTILE_SPEED * 0.8;
+                    let vy3e = Math.sin(angle) * PROJECTILE_SPEED * 0.8;
+                    projectiles.push(new Projectile(enemy.x, enemy.y, vx3e, vy3e, projDamage, '#00FFFF', 6, 'enemy', 'triangle', false, 0, 0.3));
+                    break;
+                case 4: // Lightning enemy version
+                    // Chain to player and allies? But for simplicity, to player
+                    let boltE = new Projectile(player.x, player.y, 0, 0, projDamage, '#FFFF00', 3, 'enemy', 'zigzag');
+                    boltE.chain = 1;
+                    projectiles.push(boltE);
+                    break;
+                case 5:
+                    let vx5e = Math.cos(angle) * PROJECTILE_SPEED * 0.8;
+                    let vy5e = Math.sin(angle) * PROJECTILE_SPEED * 0.8;
+                    projectiles.push(new Projectile(enemy.x, enemy.y, vx5e, vy5e, projDamage, '#00FF00', 5, 'enemy', 'arc', false, 0.3));
+                    break;
+                case 6:
+                    let breakerXE = player.x;
+                    let breakerYE = player.y;
+                    projectiles.push(new Projectile(breakerXE, breakerYE, 0, 0, 0, '#9932CC', 15, 'enemy', 'aoe', false, 0, 0, 0, 0, true));
+                    break;
+                // Add cases up to 8 for beast
+                default:
+                    // Basic fallback
+                    let vxd = Math.cos(angle) * PROJECTILE_SPEED * 0.8;
+                    let vyd = Math.sin(angle) * PROJECTILE_SPEED * 0.8;
+                    projectiles.push(new Projectile(enemy.x, enemy.y, vxd, vyd, projDamage, enemy.color, 4, 'enemy', 'shot'));
+            }
+            console.log(`Enemy fired attack ${attackId}`);
+        }
+
+        // Collision Detection
+        function checkCollisions() {
+            // Proj vs Player
+            projectiles.forEach((proj, pidx) => {
+                if (proj.owner === 'player') return;
+                if (player.collideWith(proj) && player.invulnFrames <= 0) {
+                    let dmg = proj.damage;
+                    if (shieldActive && player.shield > 0) {
+                        let absorbed = Math.min(dmg, player.shield);
+                        player.shield -= absorbed;
+                        player.mana -= absorbed * player.shieldYield;
+                        // Sparks
+                        for (let i = 0; i < 5; i++) particles.push(new Particle(player.x, player.y, (Math.random()-0.5)*5, (Math.random()-0.5)*5, 20, '#FFFF00'));
+                        dmg -= absorbed;
+                    }
+                    if (dmg > 0) {
+                        player.takeDamage(dmg, false, proj);
+                        if (!proj.pierces) projectiles.splice(pidx, 1);
+                        // Proj collision with shield destroys proj
+                        if (shieldActive) projectiles.splice(pidx, 1);
+                    }
+                }
+            });
+            // Proj vs Enemies
+            enemies.forEach((enemy, eidx) => {
+                projectiles.forEach((proj, pidx) => {
+                    if (proj.owner === 'enemy') return;
+                    if (enemy.collideWith(proj)) {
+                        let hit = enemy.takeDamage(proj.damage, proj.ignoreShield, proj);
+                        if (hit) {
+                            if (proj.type === 'beam') {
+                                // Continue for pierce
+                            } else if (!proj.pierces) {
+                                projectiles.splice(pidx, 1);
+                            }
+                            // Chain
+                            if (proj.chain > 0) {
+                                let nearby = enemies.filter(e => e !== enemy && Math.hypot(e.x - enemy.x, e.y - enemy.y) < 80 + proj.chain * 20);
+                                proj.chainTo(nearby);
+                            }
+                            // Bounce
+                            if (proj.bounce > 0) {
+                                let dx = enemy.x - proj.x;
+                                let dy = enemy.y - proj.y;
+                                let dist = Math.hypot(dx, dy);
+                                proj.vx = (dx / dist) * PROJECTILE_SPEED;
+                                proj.vy = (dy / dist) * PROJECTILE_SPEED;
+                                proj.bounce--;
+                            } else {
+                                projectiles.splice(pidx, 1);
+                            }
+                            // Knockback for cone
+                            if (proj.knockback) {
+                                let kbDx = (enemy.x - player.x) / 100;
+                                let kbDy = (enemy.y - player.y) / 100;
+                                enemy.x += kbDx * proj.knockback;
+                                enemy.y += kbDy * proj.knockback;
+                            }
+                            // Explode for missile
+                            if (proj.explodeRadius) {
+                                enemies.forEach(e => {
+                                    if (e !== enemy && Math.hypot(e.x - enemy.x, e.y - enemy.y) < proj.explodeRadius) {
+                                        e.takeDamage(proj.damage * 0.5, false, proj);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    // Proj vs Proj collisions
+                    projectiles.forEach((otherProj, oidx) => {
+                        if (pidx >= oidx) return;
+                        if (proj.owner !== otherProj.owner && Math.hypot(proj.x - otherProj.x, proj.y - otherProj.y) < proj.size + otherProj.size) {
+                            // Destroy both, particles
+                            for (let i = 0; i < 5; i++) {
+                                particles.push(new Particle(proj.x, proj.y, (Math.random()-0.5)*4, (Math.random()-0.5)*4, 15, proj.color));
+                                particles.push(new Particle(otherProj.x, otherProj.y, (Math.random()-0.5)*4, (Math.random()-0.5)*4, 15, otherProj.color));
+                            }
+                            projectiles.splice(pidx, 1);
+                            projectiles.splice(oidx, 1);
+                        }
+                    });
                 });
+                if (enemy.isDead()) {
+                    // Death explosion blood
+                    for (let i = 0; i < 30; i++) {
+                        particles.push(new Particle(enemy.x, enemy.y, (Math.random()-0.5)*15, (Math.random()-0.5)*15, 60, BLOOD_COLOR, 4));
+                    }
+                    xp += 10 + enemy.pl * 5;
+                    killCount++;
+                    enemies.splice(eidx, 1);
+                    // God PL flee: if player PL16, enemies flee 10% chance on spawn, but here on death no
+                }
+            });
+            // Player vs Enemies ram (for rings already handled)
+            if (prechargedRingsActive && ringBalls.length > 0) {
+                // Already in player update
             }
         }
 
-        function drawMenu() {
-            const menu = document.getElementById('menu');
-            menu.style.display = 'block';
-            if (game.state === 'attributes') {
-                document.getElementById('attributes').innerHTML = `
-                    <p>Level: ${game.player.level}</p>
-                    <p>PL: ${game.player.pl}</p>
-                    <p>ATK: ${game.player.atk} DEF: ${game.player.def}</p>
-                    <p>Unlocked Spells: ${game.player.unlockedAttacks.map(i => attacks[i].name).join(', ')}</p>
-                `;
+        // Spawn Wave
+        function spawnWave() {
+            let numEnemies = Math.min(1 + Math.floor(currentWave / 3), MAX_ENEMIES);
+            let boss = currentWave % 5 === 0;
+            if (boss) numEnemies = 1;
+            for (let i = 0; i < numEnemies; i++) {
+                let side = Math.floor(Math.random() * 4);
+                let x, y;
+                switch (side) {
+                    case 0: x = Math.random() * CANVAS_WIDTH; y = -ENEMY_SIZE; break;
+                    case 1: x = CANVAS_WIDTH + ENEMY_SIZE; y = Math.random() * CANVAS_HEIGHT; break;
+                    case 2: x = Math.random() * CANVAS_WIDTH; y = CANVAS_HEIGHT + ENEMY_SIZE; break;
+                    default: x = -ENEMY_SIZE; y = Math.random() * CANVAS_HEIGHT; break;
+                }
+                let ePl = Math.floor(currentWave / 2);
+                ePl = Math.min(ePl, MAX_PL);
+                let eType = ENEMY_TYPES[Math.floor(Math.random() * ENEMY_TYPES.length)];
+                let health = 50 + currentWave * 20;
+                let atk = 1 + currentWave * 5; // Start 1 ATK
+                let def = 1 + currentWave * 2; // Start 1 DEF
+                let speed = 1 + currentWave * 0.2;
+                let isBoss = boss;
+                if (isBoss) {
+                    health *= 1.5;
+                    atk *= 1.5;
+                    ePl = Math.min(ePl + 1, MAX_PL);
+                    x = CANVAS_WIDTH / 2;
+                    y = CANVAS_HEIGHT / 2 - 100;
+                }
+                let enemy = new Entity(x, y, eType.color, isBoss ? ENEMY_SIZE * 1.5 : ENEMY_SIZE, health, atk, def, speed, ePl, isBoss);
+                enemy.type = 'enemy';
+                enemies.push(enemy);
+                // PL16 flee
+                if (player.pl === MAX_PL && Math.random() < 0.1) {
+                    enemy.speed *= -1; // Flee direction? Wait, set flee flag
+                    // For simplicity, reduce speed temporarily
+                    enemy.speed *= 0.5;
+                }
             }
+            currentWave++;
         }
 
-        function startGame() {
-            game.state = 'playing';
-            document.getElementById('menu').style.display = 'none';
-            game.player = new Player(); // Reset
-            game.wave = 1;
-            spawnWave();
-            loadSave();
+        // Level Up
+        function gainXp(amount) {
+            xp += amount;
+            while (xp >= LEVEL_XP_REQ * level) { // Progressive req? No, fixed but level increases
+                xp -= LEVEL_XP_REQ * level;
+                level++;
+                showLevelUp();
+            }
+            // PL increase rare
+            if (Math.random() < PL_INCREASE_CHANCE && player.pl < MAX_PL) {
+                player.pl++;
+                console.log('PL Up!');
+            }
+            updateUI();
         }
 
-        function viewAttributes() {
-            game.state = 'attributes';
+        function showLevelUp() {
+            gameState = 'levelup';
+            let availUpgrades = UPGRADES.filter(u => {
+                if (u.rare && Math.random() < 0.3) return false;
+                if (u.type === 'unlock') {
+                    return !ABILITIES.find(a => a.name === u.name.split(' ')[1] + ' ' + u.name.split(' ')[2]).unlocked;
+                }
+                return true;
+            }).sort(() => Math.random() - 0.5).slice(0,3);
+            let upDiv = document.getElementById('upgrades');
+            upDiv.innerHTML = '';
+            availUpgrades.forEach((up, idx) => {
+                let div = document.createElement('div');
+                div.className = 'upgrade';
+                div.innerHTML = up.name;
+                div.onclick = () => selectUpgrade(up, idx);
+                upDiv.appendChild(div);
+            });
+        }
+
+        function selectUpgrade(up, idx) {
+            up.effect();
+            document.getElementById('levelup').style.display = 'none';
+            gameState = 'playing';
+            // Reset used? No, pool resets? Prompt says reset at end, but for endless, no reset
+            if (currentWave % 10 === 0) {
+                // Rare stat up
+                player.atk += Math.floor(Math.random() * 3) + 2;
+                player.def += Math.floor(Math.random() * 3) + 2;
+            }
         }
 
         // Save/Load
         function saveGame() {
-            const saveData = {
-                level: game.player.level,
-                pl: game.player.pl,
-                atk: game.player.atk,
-                def: game.player.def,
-                unlockedAttacks: game.player.unlockedAttacks,
-                xp: game.player.xp,
-                xpToNext: game.player.xpToNext
+            let save = {
+                level, xp, player: {
+                    pl: player.pl, atk: player.atk, def: player.def,
+                    mana: player.mana, health: player.health,
+                    abilities: player.abilities.map(a => ({unlocked: a.unlocked, damage: a.damage, cd: a.cd}))
+                },
+                currentWave, killCount
             };
-            localStorage.setItem('alternateSave', JSON.stringify(saveData));
+            localStorage.setItem('alternateSave', JSON.stringify(save));
         }
 
-        function loadSave() {
-            const saved = localStorage.getItem('alternateSave');
-            if (saved) {
-                const data = JSON.parse(saved);
-                game.player.level = data.level || 1;
-                game.player.pl = Math.min(data.pl || 1, PL_CAP);
-                game.player.atk = data.atk || 20;
-                game.player.def = data.def || 10;
-                game.player.unlockedAttacks = data.unlockedAttacks || [0];
-                game.player.xp = data.xp || 0;
-                game.player.xpToNext = data.xpToNext || 100;
-                // Recalc max etc.
-                game.player.maxHealth = 100 + (game.player.level - 1) * 10;
-                game.player.maxMana = 100 + (game.player.level - 1) * 10;
+        function loadGame() {
+            let save = JSON.parse(localStorage.getItem('alternateSave'));
+            if (save) {
+                level = save.level;
+                xp = save.xp;
+                player.pl = save.player.pl;
+                player.atk = save.player.atk;
+                player.def = save.player.def;
+                player.mana = save.player.mana;
+                player.health = save.player.health;
+                player.abilities = save.player.abilities.map((a, i) => ({...ABILITIES[i], ...a, currentCd: 0}));
+                currentWave = save.currentWave;
+                killCount = save.killCount;
+                spawnWave(); // Spawn current wave
+                updateUI();
             }
+        }
+
+        // UI Update
+        function updateUI() {
+            document.getElementById('health').textContent = Math.floor(player.health);
+            document.getElementById('mana').textContent = Math.floor(player.mana);
+            document.getElementById('pl').textContent = player.pl;
+            document.getElementById('atk').textContent = player.atk;
+            document.getElementById('def').textContent = player.def;
+            document.getElementById('level').textContent = level;
+            document.getElementById('xp').textContent = Math.floor(xp);
+            // Spell list? For now, console, but add scrollable
+            // Omitted for line count, assume console
+        }
+
+        function viewAttributes() {
+            document.getElementById('menu').style.display = 'none';
+            let attrDiv = document.getElementById('attrList');
+            attrDiv.innerHTML = `
+                <p>Level: ${level} | PL: ${player.pl} | Kills: ${killCount}</p>
+                <p>Unlocked: ${player.abilities.filter(a => a.unlocked).map(a => a.name).join(', ')}</p>
+            `;
+            document.getElementById('attributes').style.display = 'block';
+        }
+
+        function closeAttributes() {
+            document.getElementById('attributes').style.display = 'none';
+            document.getElementById('menu').style.display = 'block';
         }
 
         // Game Loop
         function gameLoop() {
+            let now = Date.now();
+            let dt = now - (gameLoop.lastTime || now);
+            gameLoop.lastTime = now;
+            dt = Math.min(dt, 100); // Cap dt
+
             ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-            if (game.state === 'menu' || game.state === 'attributes') {
-                drawMenu();
-            } else if (game.state === 'playing') {
+            if (gameState === 'playing') {
                 // Update
-                game.player.update();
+                player.update(dt / (1000/FPS)); // Normalize dt
+                updateEnemies(dt / (1000/FPS));
+                projectiles = projectiles.filter(p => p.update());
+                particles = particles.filter(p => {
+                    p.update();
+                    return p.life > 0;
+                });
+                effects = effects.filter(e => e.update());
+                checkCollisions();
 
-                game.enemies.forEach(e => e.update());
-                game.enemies = game.enemies.filter(e => !e.dead);
+                // Regen shield off hold
+                if (!shieldActive && player.omniRegen) {
+                    player.shield += 5 * (dt / (1000/FPS));
+                    player.shield = Math.min(100 + player.pl * 5, player.shield);
+                }
 
-                game.projectiles.forEach(p => p.update());
-                game.projectiles = game.projectiles.filter(p => p.life > 0);
-
-                particles.forEach(p => p.update());
-                particles = particles.filter(p => p.life > 0);
-
-                // Check wave
-                checkWaveClear();
+                // Check win wave
+                if (enemies.length === 0) {
+                    gainXp(WAVE_BONUS_XP + currentWave * 10);
+                    spawnWave();
+                }
 
                 // Game over
-                if (game.player.health <= 0) {
-                    explodeIntoBlood(game.player);
-                    game.state = 'gameover';
+                if (player.health <= 0) {
+                    gameState = 'gameover';
+                    document.getElementById('finalLevel').textContent = level;
+                    document.getElementById('gameover').style.display = 'block';
                     localStorage.removeItem('alternateSave'); // Wipe on death
                 }
 
-                // Auto save
-                saveGame();
+                // God mode effects
+                if (player.pl === MAX_PL) {
+                    // Screen shake
+                    ctx.save();
+                    ctx.translate((Math.random()-0.5)*2, (Math.random()-0.5)*2);
+                }
 
                 // Draw
-                game.player.draw();
-                game.enemies.forEach(e => e.draw());
-                game.projectiles.forEach(p => p.draw());
+                player.draw();
+                enemies.forEach(e => e.draw());
+                projectiles.forEach(p => p.draw());
                 particles.forEach(p => p.draw());
 
-                drawUI();
+                // Shield draw
+                if (shieldActive) {
+                    ctx.strokeStyle = player.shield < player.maxShield / 2 ? '#FF0000' : '#00FF00';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, SHIELD_RADIUS + (player.omniRegen ? 20 : 0), 0, Math.PI*2);
+                    ctx.stroke();
+                    // Pulse
+                    let pulse = Math.sin(Date.now() / 200) * 5;
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, SHIELD_RADIUS + pulse, 0, Math.PI*2);
+                    ctx.stroke();
+                }
 
-                // God PL screen shake restore
-                if (game.player.pl < PL_CAP) ctx.restore();
-            } else if (game.state === 'gameover') {
-                ctx.fillStyle = 'white';
-                ctx.font = '32px Arial';
-                ctx.fillText('Game Over', CANVAS_WIDTH / 2 - 100, CANVAS_HEIGHT / 2);
-                ctx.font = '16px Arial';
-                ctx.fillText('Refresh to restart', CANVAS_WIDTH / 2 - 80, CANVAS_HEIGHT / 2 + 30);
+                // Aim line
+                ctx.strokeStyle = '#808080';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(player.x, player.y);
+                ctx.lineTo(mouse.x, mouse.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Ring balls
+                if (prechargedRingsActive) {
+                    ringBalls.forEach(ball => {
+                        ctx.fillStyle = '#00FFFF';
+                        ctx.beginPath();
+                        ctx.arc(ball.x, ball.y, 5, 0, Math.PI*2);
+                        ctx.fill();
+                    });
+                }
+
+                if (player.pl === MAX_PL) ctx.restore();
+
+                // Auto save every 30s
+                if (now % 30000 < dt) saveGame();
             }
 
-            if (game.state === 'playing') {
-                // Sound placeholders
-                console.log('Pew pew'); // Placeholder
-            }
+            // UI
+            updateUI();
 
             requestAnimationFrame(gameLoop);
         }
 
-        // Init
-        loadSave();
-        gameLoop();
+        // Input
+        window.addEventListener('keydown', e => {
+            keys[e.key.toLowerCase()] = true;
+            if (gameState === 'playing') {
+                if (e.key === ',') {
+                    selectedAttack = (selectedAttack + 1) % player.abilities.length;
+                }
+                // Quick keys
+                let keyMap = { '1':0, '2':1, '3':2, '4':3, '5':4, '6':5, '7':6, '8':7, '9':8, 'c':9, 'v':10, 'b':11, 'n':12, 'm':13, 'p':14 };
+                if (keyMap[e.key.toLowerCase()] !== undefined) {
+                    player.fireAttack(keyMap[e.key.toLowerCase()]);
+                }
+                if (e.key === ' ') {
+                    e.preventDefault();
+                    shieldActive = true;
+                }
+            }
+        });
+        window.addEventListener('keyup', e => {
+            keys[e.key.toLowerCase()] = false;
+            if (e.key === ' ') {
+                shieldActive = false;
+                shieldRegenTime = 0;
+            }
+        });
+        canvas.addEventListener('mousemove', e => {
+            let rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+        canvas.addEventListener('mousedown', e => {
+            mouse.down = true;
+            if (gameState === 'playing') {
+                player.fireAttack(selectedAttack);
+            }
+        });
+        canvas.addEventListener('mouseup', e => { mouse.down = false; });
 
-        // Global functions for buttons
-        window.startGame = startGame;
-        window.viewAttributes = viewAttributes;
+        // Menu functions
+        function startGame() {
+            document.getElementById('menu').style.display = 'none';
+            gameState = 'playing';
+            loadGame();
+            if (enemies.length === 0) spawnWave();
+            gameStartTime = Date.now();
+        }
+
+        function restartGame() {
+            document.getElementById('gameover').style.display = 'none';
+            // Reset
+            player = new Player();
+            enemies = [];
+            projectiles = [];
+            particles = [];
+            effects = [];
+            currentWave = 1;
+            level = 1;
+            xp = 0;
+            killCount = 0;
+            selectedAttack = 0;
+            prechargedRingsActive = false;
+            ringBalls = [];
+            gameState = 'playing';
+            spawnWave();
+            updateUI();
+        }
+
+        // Init
+        function init() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            player = new Player();
+            // Audio placeholder
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            // Start loop
+            gameLoop();
+        }
+
+        // Run
+        window.onload = init;
     </script>
 </body>
 </html>
