@@ -1,985 +1,749 @@
 <!doctype html>
+<!--
+  Alternate's Magical Evolution - Minimal playable HTML5 prototype
+  - Single-file (HTML/CSS/JS)
+  - Implements player movement, aim, charging aura, shield, simple spells, enemies waves,
+    XP/leveling with 3-upgrade choices, basic shop, save/load, simple UI sidebars.
+  - Multiplayer/Wi-Fi is stubbed (placeholder) — real networking requires a server.
+  - This file intentionally includes many comments and features to match the game design spec.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Alternate's Magical Evolution — v0.9 (Shatter & Beams)</title>
+<title>Alternate's Magical Evolution — Prototype</title>
 <style>
-  html,body{height:100%;margin:0;background:#0a0a0a;color:#ddd;font-family:monospace}
-  #gameWrap{display:flex;gap:10px;padding:10px}
-  canvas{background:#020202;border:4px solid #222;image-rendering:crisp-edges}
-  #ui{width:360px}
-  .panel{background:#0b0b0b;border:1px solid #222;padding:8px;margin-bottom:8px}
-  .spells{display:flex;flex-wrap:wrap;gap:6px}
-  .spell{width:64px;height:48px;background:#111;border:2px solid #333;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;position:relative}
-  .spell.locked{opacity:0.25}
-  .spell.selected{outline:3px solid #2f8;box-shadow:0 0 8px rgba(50,255,120,0.08)}
-  .bar{height:18px;background:#222;border:1px solid #333;margin-bottom:6px;position:relative}
-  .bar > .fill{height:100%;background:linear-gradient(90deg,#2aa,#06a);display:block}
-  button{background:#222;color:#ddd;padding:6px;border:1px solid #444}
-  #upgradeModal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b0b0b;border:1px solid #333;padding:12px;display:none;z-index:999}
-  .upOpt{background:#111;border:1px solid #333;padding:6px;margin:6px;cursor:pointer}
-  #selName{position:fixed;left:50%;transform:translateX(-50%);top:8px;background:rgba(0,0,0,0.4);padding:6px 10px;border-radius:6px;border:1px solid #222;color:#bfb;}
+  :root{
+    --bg:#0b0d10; --panel:#11161a; --accent:#22c1ff; --muted:#88929a;
+    --green:#33cc66; --danger:#ff4444;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(#061018,#07121a);font-family:Inter,system-ui,Arial;}
+  #wrap{display:grid;grid-template-columns:260px 1fr 260px;gap:12px;padding:12px;height:100%;box-sizing:border-box;}
+  .panel{background:linear-gradient(180deg,var(--panel),#081017);padding:10px;border-radius:8px;color:#dbe8f2;box-shadow:0 6px 18px rgba(0,0,0,.6);overflow:auto}
+  .panel h3{margin:4px 0 8px 0;font-size:14px;color:var(--muted)}
+  #left .stat{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+  #right .enemyRow{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+  #center{position:relative;display:flex;flex-direction:column;align-items:center;}
+  #gameCanvas{background:linear-gradient(180deg,#09111a,#061018);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.6);width:100%;height:100%;}
+  .hud{position:absolute;left:50%;transform:translateX(-50%);bottom:18px;display:flex;gap:8px;align-items:center}
+  .btn{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.03);padding:6px 10px;border-radius:6px;color:#e8f9ff;cursor:pointer}
+  .small{font-size:12px;padding:4px 6px}
+  .green{color:var(--green)}
+  .shopGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .shopItem{background:linear-gradient(180deg,#0d1316,#071014);padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,.03);text-align:center}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center}
+  .modal{background:#071017;padding:16px;border-radius:10px;width:420px;max-width:90%}
+  .bar{height:10px;border-radius:6px;background:rgba(255,255,255,.06);overflow:hidden}
+  .bar > i{height:100%;display:block;background:linear-gradient(90deg,#33cc66,#22c1ff)}
+  .nameTag{position:absolute;font-size:12px;padding:2px 6px;border-radius:100px;background:rgba(0,0,0,.6);backdrop-filter:blur(2px);}
+  /* Mobile controls (visual only) */
+  .mobileControls{position:absolute;left:8px;bottom:12px;display:none}
+  .touchBtn{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center}
+  @media (max-width:900px){
+    #wrap{grid-template-columns:1fr}
+    .panel{display:none}
+    .mobileControls{display:block}
+  }
+  footer{position:absolute;left:12px;bottom:12px;color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
-<div id="selName">Selected:</div>
-<div id="gameWrap">
-<canvas id="c" width="1000" height="640"></canvas>
-<div id="ui">
-  <div class="panel">
-    <div style="display:flex;justify-content:space-between"><strong>Alternate</strong><span id="pldisp">PL 1</span></div>
-    <div>HP <span id="hptext">100/100</span></div>
-    <div class="bar"><span id="hpbar" class="fill" style="width:100%"></span></div>
-    <div>Mana <span id="manatext">100/100</span></div>
-    <div class="bar"><span id="manabar" class="fill" style="width:100%"></span></div>
-    <div>Level <span id="lvl">1</span>  XP <span id="xp">0</span></div>
-    <div>ATK <span id="atk">20</span> DEF <span id="def">10</span></div>
+<div id="wrap">
+  <!-- LEFT SIDEBAR: Player Info + Active Spell -->
+  <div id="left" class="panel">
+    <h3>Player Info</h3>
+    <div class="stat"><span>Name</span><strong id="ui_name">Magician</strong></div>
+    <div class="stat"><span>Level / XP</span><strong id="ui_level">1 (0/100)</strong></div>
+    <div class="stat"><span>HP</span><strong id="ui_hp">100</strong></div>
+    <div class="stat"><span>Mana</span><strong id="ui_mana">100</strong></div>
+    <div class="stat"><span>ATK</span><strong id="ui_atk">5</strong></div>
+    <div class="stat"><span>DEF</span><strong id="ui_def">2</strong></div>
+    <div class="stat"><span>PL / MPL</span><strong id="ui_pl">1 / 1</strong></div>
+    <h3>Active Spell</h3>
+    <div id="activeSpell" style="padding:8px;border-radius:6px;background:rgba(0,0,0,.2);">
+      <div><strong id="ui_spell">Magic Shot</strong> <span id="ui_spell_tag" class="small" style="color:var(--muted)">[Tap LMB]</span></div>
+      <div style="margin-top:8px">
+        <div class="bar" style="margin-bottom:6px"><i id="manaBar" style="width:60%"></i></div>
+        <div class="small" style="color:var(--muted)">Charge to increase damage. Hold Space for shield.</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:10px">Shop / Save</h3>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn small" id="openShop">Open Shop</button>
+      <button class="btn small" id="saveBtn">Save</button>
+      <button class="btn small" id="loadBtn">Load</button>
+    </div>
+
+    <h3 style="margin-top:10px">Quick Settings</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn small" id="toggleGrid">Toggle Grid</button>
+      <button class="btn small" id="renameBtn">Rename</button>
+      <button class="btn small" id="resetBtn">Reset</button>
+    </div>
   </div>
-  <div class="panel">
-    <div style="margin-bottom:6px">Spells (click or press 1-9 to select; glowing green when active)</div>
-    <div class="spells" id="spells"></div>
+
+  <!-- CENTER: Canvas -->
+  <div id="center" class="panel">
+    <canvas id="gameCanvas" width="1200" height="720"></canvas>
+
+    <!-- HUD controls -->
+    <div class="hud">
+      <div class="btn small" id="castBtn">Cast (LMB)</div>
+      <div class="btn small" id="shieldBtn">Shield (Space)</div>
+      <div class="btn small" id="cycleLeft">◀</div>
+      <div class="btn small" id="cycleRight">▶</div>
+      <div class="btn small" id="multiplayerBtn">Multiplayer (stub)</div>
+    </div>
+
+    <!-- Mobile controls (visual) -->
+    <div class="mobileControls">
+      <div style="display:flex;gap:8px;">
+        <div class="touchBtn">◯</div>
+        <div class="touchBtn">◑</div>
+      </div>
+    </div>
   </div>
-  <div class="panel">
-    <div class="controls">Move: WASD / Arrows<br>Aim: Mouse<br>Fire: Left Click (hold to charge)<br>Alt: Right Click<br>Shield: Space (hold)<br>Swap: 1-9</div>
+
+  <!-- RIGHT SIDEBAR: Enemies / Waves / Shop -->
+  <div id="right" class="panel">
+    <h3>Enemies Info</h3>
+    <div style="display:flex;justify-content:space-between">
+      <div>Alive: <strong id="ui_alive">0</strong></div>
+      <div>Wave: <strong id="ui_wave">0</strong></div>
+    </div>
+    <div id="enemyList" style="margin-top:8px"></div>
+
+    <h3 style="margin-top:10px">Spellbook</h3>
+    <div id="spellList">
+      <!-- each item clickable to equip -->
+    </div>
+
+    <h3 style="margin-top:10px">Shop Preview</h3>
+    <div class="shopGrid">
+      <div class="shopItem"><strong>Txt.Cat</strong><div>100</div></div>
+      <div class="shopItem"><strong>Fire Wizard</strong><div>500</div></div>
+      <div class="shopItem"><strong>Sparkling Pixie</strong><div>300</div></div>
+      <div class="shopItem"><strong>Shadow Mage</strong><div>750</div></div>
+    </div>
+
   </div>
-  <div class="panel">
-    <div><button id="playBtn">Play / Continue</button> <button id="resetBtn">Reset Save</button></div>
-    <div style="margin-top:8px"><small>Autosaves to localStorage. GameOver clears save on restart.</small></div>
-  </div>
-</div>
 </div>
 
-<div id="upgradeModal">
-  <div><strong>Level Up! Choose an upgrade</strong></div>
-  <div id="upgradeOpts" style="display:flex"></div>
-  <div style="margin-top:8px"><button id="closeUpgrade">Close</button></div>
+<!-- Overlay modals -->
+<div id="overlay" class="overlay">
+  <div class="modal" id="modalContent"></div>
 </div>
+
+<footer>Prototype — press WASD + mouse or touch. Open console (F12) for debug info.</footer>
 
 <script>
-// -------------------- Utilities --------------------
-const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
-let keys = {}, mouse = {x:W/2,y:H/2,down:false,right:false}, lastFrame = performance.now();
-addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; if(e.key===' ') e.preventDefault(); });
-addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
-canvas.addEventListener('mousemove', e=>{ const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left)*(canvas.width/r.width); mouse.y = (e.clientY - r.top)*(canvas.height/r.height); });
-canvas.addEventListener('mousedown', e=>{ if(e.button===0) mouse.down=true; if(e.button===2) mouse.right=true; });
-canvas.addEventListener('mouseup', e=>{ if(e.button===0) mouse.down=false; if(e.button===2) mouse.right=false; });
-canvas.addEventListener('contextmenu', e=>e.preventDefault());
-function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
-function rand(a,b){ return a + Math.random()*(b-a); }
-function randInt(a,b){ return Math.floor(rand(a,b+1)); }
-function now(){ return performance.now(); }
-function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
-function lerp(a,b,t){ return a + (b-a)*t; }
-function angleTo(p,q){ return Math.atan2(q.y-p.y,q.x-p.x); }
-function norm(dx,dy){ const l = Math.hypot(dx,dy)||1; return {x:dx/l,y:dy/l}; }
+/* --------- Core Game State & Utilities --------- */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+let W = canvas.width, H = canvas.height;
+let lastTs = 0;
+let debug = false;
 
-// -------------------- Save & State --------------------
-const defaultSave = { lvl:1, xp:0, atk:20, def:10, pl:1, maxHP:100, curHP:100, maxMana:100, curMana:100, speed:3, unlocked:[1] };
-let save = loadSave();
-let playing = false, wave = 0;
-let enemies = [], projectiles = [], beams = [], particles = [], pickups = [];
-let selectedSpell = 1, chargeStart = null, charging = false, chargePower = 0;
-let shieldHold = false, shieldDur = 100, shieldMax = 100, shieldRegenTimer = 0;
-let bloodAmount = 0;
-let cds = {};
-let buffs = [];
-
-// -------------------- Player --------------------
-const player = { x:W/2, y:H/2, vx:0, vy:0, ang:0 };
-
-// -------------------- Spell Registry --------------------
-/* Each spell:
-   id: {name, cost, cd, desc, use(playerOrigin,target,meta)}, chargeable:true/false, usesSegments:true/false
-*/
-const SPELLS = {
-  1:{name:'MagicBall', cost:8, cd:0.25, desc:'Chargeable mana ball', chargeable:true, use:spMagicBall},
-  2:{name:'TriShot', cost:12, cd:0.9, desc:'3-way (chargeable)', chargeable:true, use:spTri},
-  3:{name:'Beam', cost:24, cd:3.0, desc:'Segment beam (expanding)', chargeable:false, use:spExpandingBeam},
-  4:{name:'Curve', cost:16, cd:1.8, desc:'Curving projectile', chargeable:false, use:spCurve},
-  5:{name:'ShieldAtk', cost:26, cd:5.0, desc:'Curved shield projectile', chargeable:false, use:spShieldAttack},
-  6:{name:'Recursive', cost:30, cd:6.5, desc:'Bouncing recursive orb', chargeable:false, use:spRecursive},
-  7:{name:'Penta', cost:28, cd:6.0, desc:'5-way barrage (chargeable)', chargeable:true, use:spPenta},
-  8:{name:'Lightning', cost:22, cd:3.8, desc:'Procedural branching lightning', chargeable:false, use:spLightning},
-  9:{name:'Shatter', cost:20, cd:8.0, desc:'Reflect/repel/destroy around you', chargeable:false, use:spShatter},
-  10:{name:'Pierce', cost:20, cd:5.0, desc:'Piercing thin beam', chargeable:false, use:spPierceBeam},
-  11:{name:'Spiral', cost:18, cd:4.0, desc:'Spiral cluster', chargeable:false, use:spSpiral},
-  12:{name:'BurstWave', cost:26, cd:7.0, desc:'Expanding knockback ring', chargeable:true, use:spBurstWave},
-  13:{name:'Gravity', cost:22, cd:8.0, desc:'Gravity orb (pulls then explodes)', chargeable:false, use:spGravity},
-  14:{name:'Nova', cost:40, cd:12.0, desc:'Charged nova of beams', chargeable:true, use:spNova},
-  15:{name:'Mirror', cost:16, cd:4.5, desc:'Bouncy mirror shot', chargeable:false, use:spMirror},
-  16:{name:'PulseBlade', cost:14, cd:3.0, desc:'Close crescent slash', chargeable:false, use:spPulseBlade}
+/* Persistent player data */
+let playerData = {
+  name: localStorage.getItem('ame_name') || 'Magician',
+  level: 1, xp: 0, xpNext: 100,
+  hpMax: 100, hp: 100,
+  manaMax: 100, mana: 100,
+  atk: 5, def: 2,
+  pl: 1, mpl: 1,
+  credits: parseInt(localStorage.getItem('ame_credits')||'0',10),
+  skins: [],
+  activeSkin: null,
+  spells: ['Magic Shot','Tri-Shot','Beam','Ice'],
+  activeSpellIndex: 0
 };
-for(let k in SPELLS) cds[k]=0;
 
-// -------------------- Damage / PL rules --------------------
-function computeDamage(atk,pl,charge=0){
-  const plBonus = 1 + (pl/16);
-  const chargeMult = 1 + (charge * 0.8);
-  return Math.max(1, Math.round(atk * plBonus * chargeMult));
-}
-function resolveHit(dmg, atkPL, target){
-  const plResist = 1 + (target.pl/20 || 1);
-  return Math.max(1, Math.round(dmg - (target.def * plResist)));
-}
-function overpowerResult(aPL,bPL){
-  if(aPL > bPL + 0.5) return 'over';
-  if(aPL + 0.5 < bPL) return 'under';
-  return 'equal';
-}
+/* Simple world */
+let world = {
+  enemies: [],
+  projectiles: [],
+  particles: [],
+  wave: 0,
+  alive: 0,
+  grid: false
+};
 
-// -------------------- Projectile & Beam Constructors --------------------
-function spawnProjectile(p){ projectiles.push(p); }
-function spawnBeam(b){ beams.push(b); } // beam: {segments:[{x,y,dx,dy,len,pl,atk}], life, owner, type, pl}
-function spawnEnemy(level, forcedBehavior=null){
-  const behaviors = ['aggressive','caster','defender','adaptive'];
-  const b = forcedBehavior || behaviors[randInt(0, behaviors.length-1)];
-  const e = {
-    x:rand(40,W-40), y:rand(40,H-40), vx:0, vy:0, ang:0,
-    level:level, type:'mage', pl:Math.min(16, Math.max(1, Math.floor(level/2))),
-    hp:60 + level*25, maxHP:60+level*25, atk:12 + level*6, def:6 + level*2,
-    speed:1 + level*0.12, cooldown:rand(1.2,3.2), id:Date.now()+Math.random(), behavior:b
-  };
-  enemies.push(e);
-}
+/* Input */
+let input = {
+  left:false,right:false,up:false,down:false,
+  mx:W/2,my:H/2,
+  mouseDown:false,charging:false,shield:false
+};
 
-// -------------------- Spell Implementations --------------------
-function spMagicBall(origin,target,opts){
-  // alias / backward compat
-  spMagicBallInternal(origin,target,opts);
-}
-function spMagicBallInternal(origin,target,opts){
-  // same as MagicBall usage; keep named function for registry
-}
-function spMagicBall(origin,target){
-  const s = SPELLS[1]; if(save.curMana < s.cost) return;
-  save.curMana -= s.cost;
-  const pl = save.pl, atk=save.atk;
-  const power = charging ? clamp(chargePower,0,3) : 0;
-  const dir = norm(target.x-origin.x, target.y-origin.y);
-  spawnProjectile({type:'orb',x:origin.x,y:origin.y,vx:dir.x*(6+power*2),vy:dir.y*(6+power*2),rad:8*(1+0.45*power),atk:atk,pl:pl,owner:'player',charge:power,life:10});
-}
-function spTri(origin,target){
-  const s=SPELLS[2]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const pl=save.pl, atk=save.atk; const base=angleTo(origin,target);
-  const power=charging?clamp(chargePower,0,2):0;
-  for(let i=-1;i<=1;i++){ const a=base + i*0.22; spawnProjectile({type:'orb',x:origin.x,y:origin.y,vx:Math.cos(a)*(6+power*1.5),vy:Math.sin(a)*(6+power*1.5),rad:6+power*2,atk:atk*(1+power*0.3),pl:pl,owner:'player',charge:power}); }
-}
-function spPenta(origin,target){
-  const s=SPELLS[7]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const pl=save.pl, atk=save.atk; const base=angleTo(origin,target);
-  const power=charging?clamp(chargePower,0,3):0;
-  for(let i=-2;i<=2;i++){ const a=base + i*0.14; spawnProjectile({type:'orb',x:origin.x,y:origin.y,vx:Math.cos(a)*(7+power*1.4),vy:Math.sin(a)*(7+power*1.4),rad:5+power*1.2,atk:atk*(0.85+power*0.2),pl:pl,owner:'player',charge:power}); }
-}
-function spRecursive(origin,target){
-  const s=SPELLS[6]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const dir=norm(target.x-origin.x,target.y-origin.y);
-  spawnProjectile({type:'recursive',x:origin.x,y:origin.y,vx:dir.x*6,vy:dir.y*6,rad:10,atk:save.atk,pl:save.pl,bounces:3,owner:'player'});
-}
-function spCurve(origin,target){
-  const s=SPELLS[4]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const dir=norm(target.x-origin.x,target.y-origin.y);
-  spawnProjectile({type:'curve',x:origin.x,y:origin.y,vx:dir.x*6,vy:dir.y*6,curv:0.06,rad:8,atk:save.atk,pl:save.pl,owner:'player'});
-}
-function spShieldAttack(origin,target){
-  const s=SPELLS[5]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  // curved wave (crescent) using multiple orbs following an arc
-  const base=angleTo(origin,target);
-  for(let i=0;i<6;i++){
-    const a = base + (i-3)*0.18;
-    spawnProjectile({type:'shieldatk',x:origin.x + Math.cos(a)*12, y:origin.y + Math.sin(a)*12, vx:Math.cos(a)*6, vy:Math.sin(a)*6, rad:6, atk:save.atk*1.1, pl:save.pl, owner:'player'});
+/* Player entity */
+let player = {
+  x:W/2, y:H/2, r:18, color:'#113344', hatColor:'#2aa6ff',
+  aimAngle:0, charge:0, chargeMax:1.8, shieldDur:100, shieldMax:100,
+  regenCooldown:0 // seconds since enemy nearby
+};
+
+/* Spell definitions (simplified) */
+const SPELLS = {
+  'Magic Shot': { mana:8, base:12, chargeMult:1.6, homingAt:6 },
+  'Tri-Shot': { mana:12, base:8, spread:0.35, shots:3 },
+  'Beam': { mana:20, base:25, sustain:true },
+  'Ice': { mana:10, base:6, slow:0.6 },
+  'Lightning': { mana:18, base:10, chain:3 }
+};
+
+/* Enemy types template */
+const ENEMY_TEMPLATES = {
+  Novice: { color:'#ff99cc', hp:20, atk:3, def:0, pl:1, behavior:'random' },
+  Weak:   { color:'#88ff77', hp:35, atk:5, def:1, pl:2, behavior:'magic' },
+  Intermediate: { color:'#ffff66', hp:70, atk:8, def:2, pl:3, behavior:'dodge' },
+  Legend: { color:'#b88cff', hp:150, atk:14, def:4, pl:5, behavior:'beam' },
+  Myth: { color:'#9aa0a5', hp:400, atk:30, def:8, pl:8, behavior:'boss' }
+};
+
+/* UI elements */
+const ui = {
+  name: document.getElementById('ui_name'),
+  level: document.getElementById('ui_level'),
+  hp: document.getElementById('ui_hp'),
+  mana: document.getElementById('ui_mana'),
+  atk: document.getElementById('ui_atk'),
+  def: document.getElementById('ui_def'),
+  pl: document.getElementById('ui_pl'),
+  spell: document.getElementById('ui_spell'),
+  manaBar: document.getElementById('manaBar'),
+  alive: document.getElementById('ui_alive'),
+  wave: document.getElementById('ui_wave'),
+  enemyList: document.getElementById('enemyList'),
+  spellList: document.getElementById('spellList'),
+  activeSpellTag: document.getElementById('ui_spell_tag')
+};
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function rand(min,max){return Math.random()*(max-min)+min;}
+function dist(a,b,c,d){return Math.hypot(a-c,b-d);}
+
+/* --------- Input handling --------- */
+window.addEventListener('keydown', e=>{
+  if(e.key==='a' || e.key==='ArrowLeft') input.left=true;
+  if(e.key==='d' || e.key==='ArrowRight') input.right=true;
+  if(e.key==='w' || e.key==='ArrowUp') input.up=true;
+  if(e.key==='s' || e.key==='ArrowDown') input.down=true;
+  if(e.code==='Space'){ input.shield=true; }
+  if(e.key==='q'){ cycleSpell(-1); }
+  if(e.key==='e'){ cycleSpell(1); }
+});
+window.addEventListener('keyup', e=>{
+  if(e.key==='a' || e.key==='ArrowLeft') input.left=false;
+  if(e.key==='d' || e.key==='ArrowRight') input.right=false;
+  if(e.key==='w' || e.key==='ArrowUp') input.up=false;
+  if(e.key==='s' || e.key==='ArrowDown') input.down=false;
+  if(e.code==='Space'){ input.shield=false; }
+});
+canvas.addEventListener('mousemove', e=>{
+  const rect = canvas.getBoundingClientRect();
+  input.mx = (e.clientX-rect.left) * (canvas.width/rect.width);
+  input.my = (e.clientY-rect.top) * (canvas.height/rect.height);
+});
+canvas.addEventListener('mousedown', e=>{ input.mouseDown=true; input.charging=true; });
+canvas.addEventListener('mouseup', e=>{ input.mouseDown=false; fireSpell(); input.charging=false; player.charge=0; });
+
+/* Touch support (simple) */
+canvas.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  const t = e.touches[0]; const r=canvas.getBoundingClientRect();
+  input.mx=(t.clientX-r.left)*(canvas.width/r.width);
+  input.my=(t.clientY-r.top)*(canvas.height/r.height);
+  input.mouseDown=true; input.charging=true;
+}, {passive:false});
+canvas.addEventListener('touchmove', e=>{
+  const t = e.touches[0]; const r=canvas.getBoundingClientRect();
+  input.mx=(t.clientX-r.left)*(canvas.width/r.width);
+  input.my=(t.clientY-r.top)*(canvas.height/r.height);
+}, {passive:false});
+canvas.addEventListener('touchend', e=>{ input.mouseDown=false; fireSpell(); input.charging=false; player.charge=0; });
+
+/* --------- Gameplay: Spawning waves --------- */
+function spawnWave(){
+  world.wave++;
+  const wave = world.wave;
+  let count = Math.min(12, 3 + Math.floor(wave * 1.2));
+  for(let i=0;i<count;i++){
+    const kind = chooseEnemyForWave(wave);
+    spawnEnemy(kind);
   }
-}
-function spExpandingBeam(origin,target){
-  const s=SPELLS[3]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  // construct beam as segments from origin to target direction with initial narrow width; expands over time
-  const dir = norm(target.x-origin.x, target.y-origin.y);
-  const segCount = 18;
-  const segLen = 24;
-  const segments = [];
-  let sx = origin.x, sy = origin.y;
-  for(let i=0;i<segCount;i++){
-    segments.push({x:sx + dir.x * i*segLen, y:sy + dir.y * i*segLen, dx:dir.x, dy:dir.y, len:segLen, width:2 + i*0.2, pl:save.pl, atk:save.atk});
-  }
-  spawnBeam({segments, life:180 + save.pl*10, owner:'player', type:'expanding', pl:save.pl, atk:save.atk});
-}
-function spPierceBeam(origin,target){
-  const s=SPELLS[10]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const dir = norm(target.x-origin.x, target.y-origin.y);
-  const segCount = 22, segLen=26;
-  const segments = []; for(let i=0;i<segCount;i++) segments.push({x:origin.x + dir.x*i*segLen, y:origin.y + dir.y*i*segLen, dx:dir.x, dy:dir.y, len:segLen, width:1, pl:save.pl, atk:save.atk});
-  spawnBeam({segments, life:120, owner:'player', type:'pierce', pl:save.pl, atk:save.atk});
-}
-function spLightning(origin,target){
-  const s=SPELLS[8]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  // create a chain of short lightning segments toward target, branching occasionally
-  const start = {x:origin.x, y:origin.y};
-  const dir = norm(target.x-origin.x, target.y-origin.y);
-  createLightningChain(start, dir, save.pl, save.atk, 'player', 6);
-}
-function createLightningChain(pos, dir, pl, atk, owner, depth){
-  if(depth<=0) return;
-  const length = 50 + Math.random()*30;
-  const nx = pos.x + dir.x * length + rand(-12,12);
-  const ny = pos.y + dir.y * length + rand(-12,12);
-  // line stored as a small 'beam' for visuals and collision
-  const segs = [{x:pos.x,y:pos.y,dx:(nx-pos.x),dy:(ny-pos.y),len:Math.hypot(nx-pos.x,ny-pos.y),pl,atk}];
-  spawnBeam({segments:segs, life:20, owner, type:'light', pl, atk});
-  // occasional branch
-  if(Math.random() < 0.45){
-    const newDir = norm(dir.x + rand(-0.8,0.8), dir.y + rand(-0.8,0.8));
-    createLightningChain({x:nx,y:ny}, newDir, pl, atk, owner, depth-1);
-  }
-  // forward continuation
-  if(Math.random() < 0.8){
-    const nextDir = norm(dir.x + rand(-0.3,0.3), dir.y + rand(-0.3,0.3));
-    createLightningChain({x:nx,y:ny}, nextDir, pl, atk, owner, depth-1);
-  }
-}
-function spRecursive(origin,target){}
-function spSpiral(origin,target){
-  const s=SPELLS[11]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const base = angleTo(origin,target);
-  for(let i=0;i<12;i++){
-    const a = base + i*0.5;
-    spawnProjectile({type:'orb',x:origin.x,y:origin.y,vx:Math.cos(a)*(4+ i*0.15),vy:Math.sin(a)*(4+ i*0.15),rad:5,atk:save.atk,pl:save.pl,owner:'player'});
-  }
-}
-function spBurstWave(origin,target){
-  const s=SPELLS[12]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const power = charging?clamp(chargePower,0,2):0;
-  // expanding ring: stored as a projectile type that expands
-  spawnProjectile({type:'burst',x:origin.x,y:origin.y,radius:20+power*30,expanding:true,atk:save.atk*(1+power*0.5),pl:save.pl,owner:'player',life:60});
-}
-function spGravity(origin,target){
-  const s=SPELLS[13]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  spawnProjectile({type:'gravity',x:origin.x,y:origin.y,rad:12,atk:save.atk,pl:save.pl,owner:'player',pull:1.0,life:220});
-}
-function spNova(origin,target){
-  const s=SPELLS[14]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const charge = charging?clamp(chargePower,0,3):0;
-  const beamsCount = 6 + Math.floor(charge*2);
-  for(let i=0;i<beamsCount;i++){
-    const a = rand(0,Math.PI*2);
-    const dir = {x:Math.cos(a), y:Math.sin(a)};
-    const segs = [];
-    for(let j=0;j<14;j++) segs.push({x:origin.x + dir.x*j*22, y:origin.y + dir.y*j*22, dx:dir.x, dy:dir.y, len:22, width:2 + charge, pl:save.pl, atk:save.atk});
-    spawnBeam({segments:segs, life:120, owner:'player', type:'nova', pl:save.pl, atk:save.atk});
-  }
-}
-function spMirror(origin,target){
-  const s=SPELLS[15]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const dir = norm(target.x-origin.x,target.y-origin.y);
-  spawnProjectile({type:'mirror',x:origin.x,y:origin.y,vx:dir.x*6,vy:dir.y*6,rad:7,atk:save.atk,pl:save.pl,owner:'player',bounces:4});
-}
-function spPulseBlade(origin,target){
-  const s=SPELLS[16]; if(save.curMana<s.cost) return; save.curMana-=s.cost;
-  const base = angleTo(origin,target);
-  const arc = 0.9;
-  for(let i=0;i<6;i++){
-    const a = base - arc/2 + (arc/5)*i;
-    spawnProjectile({type:'blade',x:origin.x + Math.cos(a)*12, y:origin.y + Math.sin(a)*12, vx:Math.cos(a)*8, vy:Math.sin(a)*8, rad:6, atk:save.atk*1.2, pl:save.pl, owner:'player'});
-  }
+  updateUI();
 }
 
-// Bind simple aliases (some earlier referenced)
-SPELLS[1].use = spMagicBall;
-SPELLS[2].use = spTri;
-SPELLS[3].use = spExpandingBeam;
-SPELLS[4].use = spCurve;
-SPELLS[5].use = spShieldAttack;
-SPELLS[6].use = spRecursive;
-SPELLS[7].use = spPenta;
-SPELLS[8].use = spLightning;
-SPELLS[9].use = spShatter;
-SPELLS[10].use = spPierceBeam;
-SPELLS[11].use = spSpiral;
-SPELLS[12].use = spBurstWave;
-SPELLS[13].use = spGravity;
-SPELLS[14].use = spNova;
-SPELLS[15].use = spMirror;
-SPELLS[16].use = spPulseBlade;
-
-// -------------------- Shatter Implementation --------------------
-function spShatter(origin,target){
-  const s = SPELLS[9]; if(save.curMana < s.cost) return; save.curMana -= s.cost;
-  const radius = 80 + save.pl*4;
-  const center = {x:origin.x, y:origin.y};
-  // visual pulse
-  particles.push({x:center.x,y:center.y,vx:0,vy:0,life:200,shatter:true,rad:radius});
-  // affect projectiles and beams
-  // projectiles within radius: if pl < shatterPL -> reflect toward their owner direction reversed; if pl <= equal -> inefficient
-  const shPl = save.pl;
-  for(let i=projectiles.length-1;i>=0;i--){
-    const p = projectiles[i];
-    const d = Math.hypot(p.x-center.x,p.y-center.y);
-    if(d <= radius + (p.rad||6)){
-      const op = overpowerResult(shPl, p.pl);
-      if(p.type === 'orb' || p.type === 'mirror' || p.type==='curve' || p.type==='missile'){
-        if(op === 'over'){
-          // reflect: flip vx/vy and set owner to player
-          p.vx *= -1; p.vy *= -1; p.owner = 'player'; p.pl = Math.max(1, Math.floor(shPl*0.9)); // reflected PL ~= shatterPL
-          p.atk = Math.round(p.atk * 0.7);
-        } else if(op === 'equal'){
-          // both reduce; orb destroyed and explosion
-          AoEDamage(p.x,p.y, (p.rad||6)*6, p.atk, p.pl, p.owner);
-          projectiles.splice(i,1);
-        } else {
-          // under -> shatter weakened / fails on this projectile
-          // small knockback to player (penalty) and some durability/mana loss
-          save.curHP -= Math.max(1, Math.round(p.atk*0.2));
-        }
-      } else {
-        // non-orb (other types) -> destroy smaller or weaken beam segments
-        if(op === 'over'){
-          // destroy nearby beam segments: beam redirection handled below
-          projectiles.splice(i,1);
-        } else if(op === 'equal'){
-          // explode and do AoE
-          AoEDamage(p.x,p.y, (p.rad||6)*5, p.atk, p.pl, p.owner);
-          projectiles.splice(i,1);
-        } else {
-          save.curHP -= Math.max(1, Math.round(p.atk*0.25));
-        }
-      }
-    }
-  }
-  // beams: for each beam segment within radius, curve/redirect based on relative PL and proximity
-  for(let b of beams){
-    for(let seg of b.segments){
-      const d = Math.hypot(seg.x - center.x, seg.y - center.y);
-      if(d <= radius + (seg.width||4)){
-        const op = overpowerResult(shPl, b.pl);
-        if(op === 'over'){
-          // redirect: slightly invert segment direction away from center, stronger when further from beam source (closer easier)
-          const away = norm(seg.x - center.x, seg.y - center.y);
-          // compute resistance factor: distance ratio
-          const resist = clamp(1 - (d / (radius+1)), 0.15, 1.0);
-          // rotate segment direction a bit toward away vector
-          seg.dx = lerp(seg.dx, away.x, 0.35 * resist);
-          seg.dy = lerp(seg.dy, away.y, 0.35 * resist);
-          // mark segment pl to shatterPL-ish
-          seg.pl = Math.max(1, Math.floor(shPl*0.9));
-        } else if(op === 'equal'){
-          // ineffective: split & weaken segment
-          seg.pl = Math.max(1, seg.pl - 1);
-        } else {
-          // shatter fails -> minor damage to player and no effect
-          save.curHP -= 2;
-        }
-      }
-    }
-  }
+function chooseEnemyForWave(wave){
+  if(wave%8===0) return 'Myth';
+  if(wave>6 && Math.random()<0.25) return 'Legend';
+  if(wave>3 && Math.random()<0.4) return ['Intermediate','Weak'][Math.random()<0.6?0:1];
+  return ['Novice','Weak'][Math.random()<0.7?0:1];
 }
 
-// -------------------- Collision Handlers --------------------
-function handleProjectileCollisions(){
-  // Projectiles vs Projectiles: pairwise but limited by bucket (simple)
-  // We'll do O(N^2) but bail early for large counts
-  const N = projectiles.length;
-  const LIM = 600; // safety limit, if too many projectiles skip heavy checks
-  if(N < 120){ // full check if moderate count
-    for(let i=projectiles.length-1;i>=0;i--){
-      const A = projectiles[i];
-      for(let j=i-1;j>=0;j--){
-        const B = projectiles[j];
-        if(A.owner === B.owner) continue;
-        // simple circle vs circle OR beam interactions handled in beams logic
-        const dx = A.x - B.x, dy = A.y - B.y, d = Math.hypot(dx,dy);
-        const th = (A.rad||6) + (B.rad||6) + 2;
-        if(d <= th){
-          // orb vs orb core rules
-          if(A.type==='orb' && B.type==='orb'){
-            const op = overpowerResult(A.pl, B.pl);
-            if(op === 'equal'){
-              // both explode
-              AoEDamage((A.x+B.x)/2,(A.y+B.y)/2, Math.max(A.rad,B.rad)*6, Math.max(A.atk,B.atk), Math.max(A.pl,B.pl), 'both');
-              projectiles.splice(i,1); projectiles.splice(j,1); break;
-            } else if(op==='over'){
-              AoEDamage(B.x,B.y, (B.rad||6)*5, B.atk, B.pl, B.owner);
-              // remove weaker
-              projectiles.splice(j,1);
-            } else {
-              AoEDamage(A.x,A.y, (A.rad||6)*5, A.atk, A.pl, A.owner);
-              projectiles.splice(i,1);
-              break;
-            }
-          } else {
-            // generic collision: equality explosion
-            AoEDamage((A.x+B.x)/2,(A.y+B.y)/2, 30, Math.max(A.atk||5,B.atk||5), Math.max(A.pl||1,B.pl||1), 'both');
-            projectiles.splice(i,1); projectiles.splice(j,1); break;
-          }
-        }
-      }
-    }
-  } else {
-    // too many projectiles: skip heavy collision to save perf
-  }
-
-  // Projectiles vs Enemies / Player
-  for(let i=projectiles.length-1;i>=0;i--){
-    const p = projectiles[i];
-    if(p.owner === 'player'){
-      // check enemies
-      for(let j=enemies.length-1;j>=0;j--){
-        const e = enemies[j];
-        if(Math.hypot(p.x-e.x,p.y-e.y) < (p.rad||6)+18){
-          // beam handled separately; here orbs etc.
-          const op = overpowerResult(p.pl, e.pl);
-          const dmg = (op==='over') ? p.atk*1.6 : (op==='equal' ? p.atk : p.atk*0.6);
-          applyDamageEntity(e, dmg, p.pl, 'player');
-          // orbs may explode on equal
-          if(op==='equal'){ AoEDamage(e.x,e.y, (p.rad||6)*6, p.atk, p.pl, 'player'); }
-          // removal rules
-          if(!(op==='over' && p.type!=='recursive')) projectiles.splice(i,1);
-          break;
-        }
-      }
-    } else {
-      // enemy projectile hits player
-      if(Math.hypot(p.x-player.x,p.y-player.y) < (p.rad||6)+18){
-        if(shieldHold && shieldDur > 0){
-          const op = overpowerResult(p.pl, save.pl);
-          if(op === 'under'){
-            // reflect
-            spawnProjectile({type:'orb',x:player.x,y:player.y,vx:-p.vx*1.2,vy:-p.vy*1.2,rad:6,atk:Math.round(p.atk*0.6),pl:save.pl,owner:'player',life:12});
-            shieldDur = Math.max(0, shieldDur - (20 + p.pl*6));
-          } else if(op === 'equal'){
-            shieldDur = Math.max(0, shieldDur - (18 + p.atk*0.4));
-            // explosion near player if close power
-            if(Math.abs(p.pl - save.pl) <= 0.5){ AoEDamage(player.x,player.y,50,p.atk*0.8,p.pl,'enemy'); }
-            projectiles.splice(i,1);
-          } else {
-            shieldDur = Math.max(0, shieldDur - (8 + p.atk*0.8));
-            applyDamageEntity(player, p.atk*0.9, p.pl, 'enemy');
-            projectiles.splice(i,1);
-          }
-        } else {
-          applyDamageEntity(player, p.atk, p.pl, 'enemy');
-          projectiles.splice(i,1);
-        }
-      }
-    }
-  }
-}
-
-// Beam collisions & segment updates
-function handleBeams(dt){
-  for(let bIdx=beams.length-1;bIdx>=0;bIdx--){
-    const b = beams[bIdx];
-    // advance beam life
-    b.life -= dt*60;
-    // move segments slightly according to dx/dy (for curving)
-    for(let s of b.segments){
-      // integrate small movement of segment along its direction to simulate progression
-      s.x += s.dx * 0.2;
-      s.y += s.dy * 0.2;
-    }
-    // collisions: player & enemies check each segment
-    if(b.owner === 'player'){
-      // enemy hit
-      for(let eIdx=enemies.length-1;eIdx>=0;eIdx--){
-        const e = enemies[eIdx];
-        for(let s of b.segments){
-          // distance point-to-seg approximated by distance to segment center
-          const d = Math.hypot(e.x - s.x, e.y - s.y);
-          if(d < (s.width||3) + 14){
-            const op = overpowerResult(b.pl, e.pl);
-            const dmg = (op==='over')? b.atk*1.8 : (op==='equal'? b.atk : b.atk*0.6);
-            applyDamageEntity(e, dmg, b.pl, 'player');
-            // if under, shorten beam
-            if(op==='under'){ b.life -= 18; }
-            break;
-          }
-        }
-      }
-    } else {
-      // beam from enemy hitting player (check segments)
-      for(let s of b.segments){
-        const d = Math.hypot(player.x - s.x, player.y - s.y);
-        if(d < (s.width||3) + 18){
-          if(shieldHold && shieldDur > 0){
-            const op = overpowerResult(b.pl, save.pl);
-            if(op==='under'){
-              // reflect segment: spawn small orb back
-              spawnProjectile({type:'orb',x:player.x,y:player.y,vx:-s.dx*6,vy:-s.dy*6,rad:6,atk:Math.round(b.atk*0.6),pl:save.pl,owner:'player'});
-              shieldDur = Math.max(0, shieldDur - (22 + b.pl*5));
-            } else if(op==='equal'){
-              shieldDur = Math.max(0, shieldDur - (16 + b.atk*0.4));
-              AoEDamage(player.x,player.y,30,b.atk*0.8,b.pl,'enemy');
-            } else {
-              shieldDur = Math.max(0, shieldDur - (6 + b.atk*0.8));
-              applyDamageEntity(player, b.atk*0.9, b.pl, 'enemy');
-            }
-          } else {
-            applyDamageEntity(player, b.atk, b.pl, 'enemy');
-          }
-          break;
-        }
-      }
-    }
-    // remove beam if life <= 0 or segments depleted
-    if(b.life <= 0 || !b.segments.length) beams.splice(bIdx,1);
-  }
-}
-
-// -------------------- Damage Application --------------------
-function applyDamageEntity(entity, dmg, atkPL, sourceOwner){
-  if(entity === player){
-    const effective = Math.max(1, Math.round(dmg - (save.def + save.pl*0.5)));
-    save.curHP -= effective;
-    bloodAmount = clamp(bloodAmount + effective / save.maxHP * 0.18, 0, 1);
-  } else {
-    const effective = resolveHit(dmg, atkPL, entity);
-    entity.hp -= effective;
-    if(entity.hp <= 0){
-      spawnParticles(entity.x, entity.y, 20);
-      save.xp += 60 + Math.floor(entity.level*10);
-    }
-  }
-}
-function spawnParticles(x,y,n,opts){
-  for(let i=0;i<n;i++){
-    particles.push({x,y,vx:rand(-2,2),vy:rand(-2,2),life:200+rand(0,400),col: (opts && opts.col) || '#f55'});
-  }
-}
-
-// -------------------- Enemy AI --------------------
-function updateEnemies(dt){
-  for(let e of enemies){
-    // basic targeting and movement
-    const dx = player.x - e.x, dy = player.y - e.y, d = Math.hypot(dx,dy);
-    if(e.behavior === 'aggressive'){
-      const dir = norm(dx,dy);
-      e.vx = lerp(e.vx, dir.x * e.speed*1.1, 0.06); e.vy = lerp(e.vy, dir.y * e.speed*1.1, 0.06);
-    } else if(e.behavior === 'caster'){
-      // maintain distance
-      if(d < 140){ e.vx = lerp(e.vx, -dx/d * e.speed, 0.05); e.vy = lerp(e.vy, -dy/d * e.speed, 0.05); }
-      else { e.vx = lerp(e.vx, dx/d * e.speed*0.3, 0.03); e.vy = lerp(e.vy, dy/d * e.speed*0.3, 0.03); }
-    } else if(e.behavior === 'defender'){
-      // occasionally shield and use shatter
-      if(Math.random()<0.002 && e.hp > e.maxHP*0.25){ // shield/block chance
-        // cast shatter variant (enemy)
-        enemyCastShatter(e);
-      }
-      e.vx = lerp(e.vx, (Math.random()-0.5)*0.3, 0.02);
-      e.vy = lerp(e.vy, (Math.random()-0.5)*0.3, 0.02);
-    } else if(e.behavior === 'adaptive'){
-      // simple adaptation: if player close, aggressive; if far, caster
-      if(d < 120){ const dir = norm(dx,dy); e.vx = lerp(e.vx, dir.x * e.speed*1.2, 0.06); e.vy = lerp(e.vy, dir.y * e.speed*1.2, 0.06); }
-      else { e.vx = lerp(e.vx, -dx/d * e.speed*0.6, 0.03); e.vy = lerp(e.vy, -dy/d * e.speed*0.6, 0.03); }
-    }
-
-    e.x = clamp(e.x + e.vx, 20, W-20); e.y = clamp(e.y + e.vy, 20, H-20);
-    e.cooldown -= dt;
-    if(e.cooldown <= 0){
-      e.cooldown = rand(1.2,3.2) - e.pl*0.03;
-      // pick an attack subset based on behavior and pl
-      const pools = {
-        'aggressive': [1,2,16,15],
-        'caster': [1,3,8,11,12,13],
-        'defender': [9,5,6,2],
-        'adaptive': [1,2,3,7,8,9]
-      };
-      const pool = pools[e.behavior] || [1,2,3];
-      const choice = pool[randInt(0,pool.length-1)];
-      // enemies can use charge sometimes
-      const target = {x:player.x + rand(-40,40), y:player.y + rand(-40,40)};
-      // emulate temporary save context for enemy (simple)
-      enemyUseSpell(e, choice, target);
-    }
-  }
-}
-
-function enemyUseSpell(e, spellId, target){
-  // For simplicity: enemy spells produce projectiles with e.atk and e.pl
-  // We will create similar effects but owned by 'enemy'
-  const s = SPELLS[spellId];
-  if(!s) return;
-  if(spellId === 1){ // MagicBall (possibly charged)
-    const charge = Math.random()<0.5 ? rand(0.5,2.2):0;
-    const dir = norm(target.x - e.x, target.y - e.y);
-    spawnProjectile({type:'orb',x:e.x,y:e.y,vx:dir.x*(5+charge*1.8),vy:dir.y*(5+charge*1.8),rad:8*(1+0.36*charge),atk:e.atk*(1+charge*0.4),pl:e.pl,owner:'enemy',charge:charge});
-  } else if(spellId===3){ // Expanding beam
-    const dir = norm(target.x-e.x,target.y-e.y);
-    const segCount = 12; const segLen = 26;
-    const segs=[]; for(let i=0;i<segCount;i++) segs.push({x:e.x+dir.x*i*segLen,y:e.y+dir.y*i*segLen,dx:dir.x,dy:dir.y,len:segLen,width:1+ i*0.12,pl:e.pl,atk:e.atk});
-    spawnBeam({segments:segs, life:100, owner:'enemy', type:'expanding', pl:e.pl, atk:e.atk});
-  } else if(spellId===9){
-    // enemy Shatter (weaker)
-    enemyShatter(e);
-  } else if(spellId===8){
-    createLightningChain({x:e.x,y:e.y}, norm(target.x-e.x,target.y-e.y), e.pl, e.atk, 'enemy', 5);
-  } else if(spellId===2){
-    // tri
-    const base = angleTo(e,target);
-    for(let i=-1;i<=1;i++){ const a = base + i*0.22; spawnProjectile({type:'orb',x:e.x,y:e.y,vx:Math.cos(a)*5,vy:Math.sin(a)*5,rad:6,atk:e.atk,pl:e.pl,owner:'enemy'}); }
-  } else {
-    // fallback: single orb
-    const dir = norm(target.x-e.x,target.y-e.y);
-    spawnProjectile({type:'orb',x:e.x,y:e.y,vx:dir.x*5,vy:dir.y*5,rad:7,atk:e.atk,pl:e.pl,owner:'enemy'});
-  }
-}
-
-function enemyUseSpellNoArgs(e,sid){ enemyUseSpell(e,sid,{x:player.x,y:player.y}); }
-function enemyShatter(e){
-  // similar to player shatter but scaled
-  const radius = 60 + e.pl*3;
-  for(let i=projectiles.length-1;i>=0;i--){
-    const p = projectiles[i];
-    const d = Math.hypot(p.x - e.x, p.y - e.y);
-    if(d <= radius + (p.rad||6)){
-      const op = overpowerResult(e.pl, p.pl);
-      if(op === 'over'){
-        // destroy projectile
-        projectiles.splice(i,1);
-      } else if(op === 'equal'){
-        // small explosion
-        AoEDamage(p.x,p.y, (p.rad||6)*4, p.atk, p.pl, p.owner);
-        projectiles.splice(i,1);
-      } else {
-        // ineffective
-      }
-    }
-  }
-}
-
-// -------------------- Collision Helpers --------------------
-function pointLineDistance(pt, a, b){
-  const A = pt.x - a.x, B = pt.y - a.y, C = b.x - a.x, D = b.y - a.y;
-  const dot = A*C + B*D; const lenSq = C*C + D*D || 1; const param = Math.max(0, Math.min(1, dot/lenSq));
-  const xx = a.x + param * C, yy = a.y + param * D; return Math.hypot(pt.x - xx, pt.y - yy);
-}
-function AoEDamage(cx,cy,radius,atk,pl,owner){
-  if(owner === 'player'){
-    for(let i=enemies.length-1;i>=0;i--){
-      const e = enemies[i]; if(Math.hypot(e.x-cx,e.y-cy) <= radius + 10) applyDamageEntity(e, atk, pl, 'player');
-    }
-  } else {
-    if(Math.hypot(player.x - cx, player.y - cy) <= radius + 10) applyDamageEntity(player, atk, pl, 'enemy');
-  }
-}
-
-// -------------------- Update Loop --------------------
-let last = performance.now();
-function update(dt){
-  // input & movement
-  const spd = save.speed * (buffs.find(b=>b.type==='speed' && b.time>now()) ? 2 : 1);
-  let mx=0,my=0; if(keys['w']||keys['arrowup']) my-=1; if(keys['s']||keys['arrowdown']) my+=1; if(keys['a']||keys['arrowleft']) mx-=1; if(keys['d']||keys['arrowright']) mx+=1;
-  const len = Math.hypot(mx,my) || 1;
-  player.vx = lerp(player.vx, mx/len * spd, 0.22); player.vy = lerp(player.vy, my/len * spd, 0.22);
-  player.x = clamp(player.x + player.vx, 20, W-20); player.y = clamp(player.y + player.vy, 20, H-20);
-  player.ang = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-
-  // charging
-  if(mouse.down){
-    if(!charging){ chargeStart = now(); charging = true; }
-    chargePower = clamp((now() - chargeStart)/700, 0, 3);
-  } else {
-    if(charging){
-      // release selected spell
-      if(SPELLS[selectedSpell]){
-        if(cds[selectedSpell] <= 0){
-          SPELLS[selectedSpell].use({x:player.x,y:player.y}, {x:mouse.x,y:mouse.y});
-          cds[selectedSpell] = SPELLS[selectedSpell].cd;
-        }
-      }
-      charging = false; chargeStart = null; chargePower = 0;
-    }
-  }
-
-  // shield
-  shieldHold = !!keys[' '];
-  if(shieldHold){
-    shieldDur = Math.max(0, shieldDur - dt*14);
-    save.curMana = Math.max(0, save.curMana - dt*8);
-    shieldRegenTimer = 0;
-  } else {
-    shieldRegenTimer += dt;
-    if(shieldRegenTimer > 1.2) shieldDur = Math.min(shieldMax, shieldDur + dt*10);
-  }
-
-  // cooldowns
-  for(let k in cds) cds[k] = Math.max(0, cds[k]-dt);
-
-  // enemies
-  updateEnemies(dt);
-
-  // projectiles movement
-  for(let i=projectiles.length-1;i>=0;i--){
-    const p = projectiles[i];
-    // homing
-    if(p.homing && p.owner === 'player'){
-      if(enemies.length){
-        let t = enemies.reduce((best,e)=>{const d=Math.hypot(e.x-p.x,e.y-p.y); if(!best||d<best.d) return {e,d}; return best;}, null);
-        if(t && t.e){ const dir = norm(t.e.x - p.x, t.e.y - p.y); p.vx = lerp(p.vx||0, dir.x*(p.speed||6), 0.06); p.vy = lerp(p.vy||0, dir.y*(p.speed||6), 0.06); }
-      }
-    }
-    if(p.type === 'curve'){
-      // apply curvature toward tx,ty if present
-      if(p.tx !== undefined){
-        const td = norm(p.tx - p.x, p.ty - p.y); p.vx += td.x * (p.curv||0.02); p.vy += td.y * (p.curv||0.02);
-      } else {
-        p.vx += Math.cos(now()/500) * (p.curv||0.02);
-        p.vy += Math.sin(now()/500) * (p.curv||0.02);
-      }
-    }
-    if(p.type === 'burst' && p.expanding){
-      p.radius += 6;
-      p.life -= 1;
-      if(p.life <= 0) projectiles.splice(i,1);
-    } else {
-      p.x += (p.vx||0); p.y += (p.vy||0);
-      if(p.life !== undefined){ p.life -= dt*60; if(p.life <= 0) projectiles.splice(i,1); }
-    }
-    // special gravity
-    if(p.type === 'gravity'){
-      // pull other small projectiles toward it
-      for(let j=projectiles.length-1;j>=0;j--){
-        const q = projectiles[j];
-        if(q === p) continue;
-        const d = Math.hypot(q.x - p.x, q.y - p.y);
-        if(d < 120){
-          const pull = norm(p.x - q.x, p.y - q.y);
-          q.vx += pull.x * 0.35; q.vy += pull.y * 0.35;
-        }
-      }
-      p.life -= dt*40; if(p.life <= 0){
-        AoEDamage(p.x,p.y, 80, p.atk*1.2, p.pl, p.owner);
-        projectiles.splice(i,1);
-      }
-    }
-  }
-
-  // beam updates
-  handleBeams(dt);
-
-  // handle collisions
-  handleProjectileCollisions();
-
-  // cleanup offscreen
-  for(let i=projectiles.length-1;i>=0;i--){
-    const p = projectiles[i]; if(p.x < -60 || p.x > W+60 || p.y < -60 || p.y > H+60) projectiles.splice(i,1);
-  }
-
-  // remove dead enemies
-  for(let i=enemies.length-1;i>=0;i--) if(enemies[i].hp <= 0) enemies.splice(i,1);
-
-  // spawn waves automatically when none remain
-  if(playing && enemies.length === 0) waveUp();
-
-  // regen + UI updates
-  if(enemies.length === 0) save.curHP = Math.min(save.maxHP, save.curHP + 3*dt);
-  save.curMana = Math.min(save.maxMana, save.curMana + 15*dt);
-  document.getElementById('hptext').textContent = Math.round(save.curHP) + '/' + save.maxHP;
-  document.getElementById('manatext').textContent = Math.round(save.curMana) + '/' + save.maxMana;
-  document.getElementById('hpbar').style.width = (save.curHP/save.maxHP*100)+'%';
-  document.getElementById('manabar').style.width = (save.curMana/save.maxMana*100)+'%';
-  document.getElementById('pldisp').textContent = 'PL ' + save.pl;
-  document.getElementById('lvl').textContent = save.lvl; document.getElementById('xp').textContent = save.xp;
-  document.getElementById('atk').textContent = save.atk; document.getElementById('def').textContent = save.def;
-
-  // leveling
-  if(save.xp >= 100 + (save.lvl-1)*20){
-    save.xp -= (100 + (save.lvl-1)*20); save.lvl++;
-    save.maxHP += (save.lvl%5===0)? randInt(20,50) : randInt(5,12);
-    save.curHP = save.maxHP; save.maxMana += (save.lvl%5===0)? randInt(20,50) : randInt(5,10); save.curMana = save.maxMana;
-    if(Math.random()<0.25) save.pl = Math.min(16, save.pl + (Math.random()<0.5?0.5:1));
-    offerUpgrades();
-  }
-
-  // game over
-  if(save.curHP <= 0){
-    playing = false; alert('Game Over — Alternate fell. Save cleared.'); localStorage.removeItem('alt_save'); location.reload();
-  }
-}
-
-// -------------------- Wave & Save --------------------
-function waveUp(){ wave++; const count = Math.min(10, 1 + Math.floor(wave/2) + randInt(0,Math.floor(wave/3))); for(let i=0;i<count;i++) spawnEnemy(wave); saveSave(); }
-function saveSave(){ localStorage.setItem('alt_save', JSON.stringify(save)); }
-function loadSave(){ const s = localStorage.getItem('alt_save'); if(s) return JSON.parse(s); return JSON.parse(JSON.stringify(defaultSave)); }
-
-// -------------------- Upgrade Modal --------------------
-const upgradeModal = document.getElementById('upgradeModal'), upgradeOpts = document.getElementById('upgradeOpts'), selName = document.getElementById('selName');
-document.getElementById('closeUpgrade').onclick = ()=>{ upgradeModal.style.display='none'; }
-function offerUpgrades(){
-  const all = Object.keys(SPELLS).map(Number);
-  const opts = [];
-  while(opts.length<3){ const r = all[randInt(0,all.length-1)]; if(!opts.includes(r)) opts.push(r); }
-  upgradeOpts.innerHTML = '';
-  opts.forEach(id=>{
-    const s = SPELLS[id];
-    const div = document.createElement('div'); div.className='upOpt';
-    div.textContent = (s && s.name ? s.name : 'Stat') + (s.locked && !save.unlocked.includes(id) ? ' (Unlock)' : ' (Boost)');
-    div.onclick = ()=>{
-      if(s.locked && !save.unlocked.includes(id)){ save.unlocked.push(id); s.locked=false; }
-      else { save.atk += 2; save.def += 1; }
-      save.curHP = save.maxHP; save.curMana = save.maxMana; saveSave(); populateSpells(); upgradeModal.style.display='none';
-    };
-    upgradeOpts.appendChild(div);
+function spawnEnemy(name){
+  const t = ENEMY_TEMPLATES[name];
+  const angle = Math.random()*Math.PI*2;
+  const r = Math.max(W,H)*0.45;
+  const x = W/2 + Math.cos(angle)*r;
+  const y = H/2 + Math.sin(angle)*r;
+  world.enemies.push({
+    id: Math.random().toString(36).slice(2,9),
+    type: name, x,y, vx:0,vy:0,
+    hp: t.hp, hpMax: t.hp,
+    atk: t.atk, def: t.def, pl: t.pl,
+    color: t.color, behavior: t.behavior,
+    rank: name
   });
-  upgradeModal.style.display = 'block';
+  world.alive = world.enemies.length;
 }
 
-// -------------------- Drawing --------------------
-function draw(){
-  ctx.clearRect(0,0,W,H); ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
-  // particles
-  for(let i=particles.length-1;i>=0;i--){
-    const p = particles[i]; p.life -= 16;
-    if(p.life <= 0){ particles.splice(i,1); continue; }
-    ctx.fillStyle = p.col || '#f55'; ctx.fillRect(p.x, p.y, 2, 2);
-  }
-  // beams (draw first so projectiles appear above sometimes)
-  for(let b of beams){
-    if(b.type==='expanding' || b.type==='nova'){
-      for(let s of b.segments){
-        ctx.beginPath(); ctx.moveTo(s.x, s.y);
-        ctx.lineTo(s.x + s.dx * s.len, s.y + s.dy * s.len);
-        ctx.strokeStyle = b.owner==='player' ? 'rgba(160,200,255,0.9)' : 'rgba(255,120,120,0.9)';
-        ctx.lineWidth = (s.width || 2) + (b.type==='expanding'? (s.len/40):0);
-        ctx.stroke();
-      }
-    } else {
-      for(let s of b.segments){
-        ctx.beginPath(); ctx.moveTo(s.x, s.y);
-        ctx.lineTo(s.x + s.dx * s.len, s.y + s.dy * s.len);
-        ctx.strokeStyle = 'rgba(220,220,200,0.7)';
-        ctx.lineWidth = s.width || 2; ctx.stroke();
+/* --------- Spells & Projectiles --------- */
+function fireSpell(){
+  const spellName = playerData.spells[playerData.activeSpellIndex] || 'Magic Shot';
+  const sDef = SPELLS[spellName] || SPELLS['Magic Shot'];
+  if(playerData.mana < sDef.mana) return;
+  // consume mana
+  playerData.mana = clamp(playerData.mana - sDef.mana, 0, playerData.manaMax);
+  // create projectiles depending on spell
+  const angle = Math.atan2(input.my - player.y, input.mx - player.x);
+  const speed = 6 + (player.charge*4);
+  if(spellName==='Magic Shot'){
+    world.projectiles.push({x:player.x + Math.cos(angle)*22, y:player.y + Math.sin(angle)*22,
+      vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, life:120, dmg:Math.round(sDef.base*(1+player.charge)), pl:playerData.pl, owner:'player', type:'orb'});
+  } else if(spellName==='Tri-Shot'){
+    for(let i=0;i<3;i++){
+      const a = angle + (i-1)*(sDef.spread) * (1 - player.charge*0.3);
+      world.projectiles.push({x:player.x + Math.cos(a)*22, y:player.y + Math.sin(a)*22,
+        vx:Math.cos(a)*speed, vy:Math.sin(a)*speed, life:120, dmg:Math.round(sDef.base*(1+player.charge*0.8)), pl:playerData.pl, owner:'player', type:'orb'});
+    }
+  } else if(spellName==='Beam'){
+    // simplified: instant beam hit in a line
+    const beamRange = 420 + player.charge*180;
+    let bx = player.x + Math.cos(angle)*beamRange;
+    let by = player.y + Math.sin(angle)*beamRange;
+    // damage first enemy hit along line
+    let hit = null;
+    for(const e of world.enemies){
+      const d = Math.abs((e.x-player.x)*(player.y-by)-(e.y-player.y)*(player.x-bx)) / Math.hypot(bx-player.x,by-player.y);
+      if(d < 22){
+        hit = e; break;
       }
     }
+    if(hit){
+      hit.hp -= sDef.base * (1 + player.charge*1.2);
+      spawnParticle(hit.x,hit.y,8, player.color);
+      gainXP(6);
+    }
+  } else if(spellName==='Ice'){
+    world.projectiles.push({x:player.x + Math.cos(angle)*22, y:player.y + Math.sin(angle)*22,
+      vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, life:120, dmg:sDef.base*(1+player.charge), pl:playerData.pl, owner:'player', type:'ice'});
+  } else {
+    // fallback simple orb
+    world.projectiles.push({x:player.x + Math.cos(angle)*22, y:player.y + Math.sin(angle)*22,
+      vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, life:120, dmg:sDef.base*(1+player.charge), pl:playerData.pl, owner:'player', type:'orb'});
   }
+}
+
+/* --------- Collisions & Simulation --------- */
+function updateEntities(dt){
+  // player aim angle
+  player.aimAngle = Math.atan2(input.my - player.y, input.mx - player.x);
+
+  // movement
+  const speedBase = 160;
+  let mvx = 0, mvy = 0;
+  if(input.left) mvx -= 1; if(input.right) mvx += 1;
+  if(input.up) mvy -= 1; if(input.down) mvy += 1;
+  if(mvx||mvy){
+    const mag = Math.hypot(mvx,mvy);
+    player.x += (mvx/mag) * speedBase * dt;
+    player.y += (mvy/mag) * speedBase * dt;
+  }
+
+  // clamp
+  player.x = clamp(player.x, 28, W-28);
+  player.y = clamp(player.y, 28, H-28);
+
+  // charge mechanic
+  if(input.charging && input.mouseDown){
+    player.charge = clamp(player.charge + dt*1.2, 0, player.chargeMax);
+  } else {
+    player.charge = Math.max(0, player.charge - dt*1.8);
+  }
+
+  // mana regen always
+  playerData.mana = clamp(playerData.mana + 20*dt, 0, playerData.manaMax);
+
+  // HP regen if no enemies nearby
+  const nearestEnemyDist = world.enemies.length ? Math.min(...world.enemies.map(e=>dist(e.x,e.y,player.x,player.y))) : Infinity;
+  if(nearestEnemyDist > 240){ playerData.hp = clamp(playerData.hp + 5*dt, 0, playerData.hpMax); }
+
   // projectiles
-  for(let p of projectiles){
-    ctx.save();
-    if(p.type==='orb' || p.type==='mirror' || p.type==='recursive' || p.type==='missile' || p.type==='curve' || p.type==='shieldatk'){
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.rad||6,0,Math.PI*2);
-      ctx.fillStyle = p.owner==='player' ? '#ff9933' : '#ff4444'; ctx.fill();
-      if(p.charge){ ctx.beginPath(); ctx.arc(p.x,p.y,(p.rad||6) + p.charge*6,0,Math.PI*2); ctx.strokeStyle='rgba(180,140,255,0.25)'; ctx.stroke(); }
-    } else if(p.type==='burst'){
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.radius||20,0,Math.PI*2); ctx.strokeStyle='rgba(200,180,120,0.12)'; ctx.stroke();
-    } else if(p.type==='gravity'){
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.rad||10,0,Math.PI*2); ctx.fillStyle='purple'; ctx.fill();
-    } else if(p.type==='blade'){
-      ctx.fillStyle='#ddffdd'; ctx.fillRect(p.x-4,p.y-4,8,8);
+  for(let i=world.projectiles.length-1;i>=0;i--){
+    const p = world.projectiles[i];
+    p.x += p.vx * dt * 60/1;
+    p.y += p.vy * dt * 60/1;
+    p.life--;
+    // remove out of bounds or expired
+    if(p.life<=0 || p.x< -40 || p.x>W+40 || p.y<-40 || p.y>H+40){ world.projectiles.splice(i,1); continue; }
+    // collisions
+    if(p.owner==='player'){
+      for(let j=world.enemies.length-1;j>=0;j--){
+        const e = world.enemies[j];
+        if(dist(p.x,p.y,e.x,e.y) < 18 + (p.type==='orb'?6:8)){
+          // PL interactions (simplified): if projectile pl < enemy pl then reduce dmg; equal -> explosion
+          let dmg = p.dmg || 6;
+          if(p.pl < e.pl) dmg = Math.round(dmg*0.6);
+          else if(p.pl === e.pl) dmg = Math.round(dmg*1.2), spawnExplosion(p.x,p.y);
+          e.hp -= Math.max(1, Math.round(dmg - e.def*0.5));
+          spawnParticle(e.x,e.y,6,'#ffcc66');
+          world.projectiles.splice(i,1);
+          if(e.hp <= 0){
+            // drop credits and xp
+            playerData.credits += Math.max(2, Math.floor(e.hpMax/6));
+            gainXP(8 + Math.floor(e.hpMax/10));
+            world.enemies.splice(j,1);
+            world.alive = world.enemies.length;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // enemies AI simple
+  for(const e of world.enemies){
+    // move toward player with some behavior
+    const angle = Math.atan2(player.y - e.y, player.x - e.x);
+    const spd = 40 + (e.pl*8);
+    // random jitter for novice
+    if(e.behavior==='random'){
+      e.x += Math.cos(angle)*spd*dt + Math.sin(Math.random()*6)*10*dt;
+      e.y += Math.sin(angle)*spd*dt + Math.cos(Math.random()*6)*10*dt;
+    } else if(e.behavior==='magic'){
+      // keep distance
+      const d = dist(e.x,e.y,player.x,player.y);
+      if(d < 160) { e.x -= Math.cos(angle)*spd*dt; e.y -= Math.sin(angle)*spd*dt; }
+      else { e.x += Math.cos(angle)*spd*dt * 0.6; e.y += Math.sin(angle)*spd*dt * 0.6; }
+      // occasionally fire small projectile
+      if(Math.random() < 0.006) {
+        world.projectiles.push({x:e.x,y:e.y,vx:Math.cos(angle)*3+rand(-0.6,0.6),vy:Math.sin(angle)*3+rand(-0.6,0.6),life:120,dmg:e.atk,pl:e.pl,owner:'enemy',type:'orb'});
+      }
+    } else if(e.behavior==='beam'){
+      // slowly approach and sometimes fire burst
+      e.x += Math.cos(angle)*spd*0.9*dt; e.y += Math.sin(angle)*spd*0.9*dt;
+      if(Math.random()<0.004) {
+        // wide beam simulated by projectiles fan
+        for(let i=0;i<6;i++){
+          const a = angle + (i-3)*0.12;
+          world.projectiles.push({x:e.x+Math.cos(a)*18,y:e.y+Math.sin(a)*18,vx:Math.cos(a)*5,vy:Math.sin(a)*5,life:90,dmg:Math.round(e.atk*0.8),pl:e.pl,owner:'enemy',type:'orb'});
+        }
+      }
     } else {
-      ctx.fillStyle='#fff'; ctx.fillRect(p.x-2,p.y-2,4,4);
+      e.x += Math.cos(angle)*spd*dt; e.y += Math.sin(angle)*spd*dt;
     }
-    ctx.restore();
-  }
-  // enemies
-  for(let e of enemies) drawEnemy(e);
-  // player
-  drawPlayer();
-  // draw HUD overlay (shield)
-  ctx.fillStyle = '#222'; ctx.fillRect(10,H-40,170,18);
-  ctx.fillStyle = '#88cc88'; ctx.fillRect(10,H-40,(shieldDur/shieldMax)*170,18);
-  ctx.strokeStyle = '#333'; ctx.strokeRect(10,H-40,170,18);
-  // show selected spell name and highlight UI
-  selName.textContent = 'Selected: ' + (SPELLS[selectedSpell] ? SPELLS[selectedSpell].name : 'None');
-}
-function drawPlayer(){
-  ctx.save(); ctx.translate(player.x, player.y);
-  // body
-  ctx.fillStyle = '#113344'; ctx.fillRect(-14,-14,28,28);
-  // hat
-  ctx.fillStyle = '#3355ff'; ctx.fillRect(-11,-24,22,8);
-  // barrel points to mouse
-  ctx.save(); ctx.rotate(player.ang);
-  ctx.fillStyle = '#66aaff'; ctx.fillRect(14,-4,20,8);
-  ctx.restore();
-  // charging aura
-  if(charging){
-    for(let r=0;r<3;r++){
-      ctx.beginPath(); ctx.arc(0,0,14 + chargePower*12 + r*6,0,Math.PI*2);
-      ctx.strokeStyle = `rgba(180,120,255,${0.06 + r*0.04 + chargePower*0.06})`; ctx.stroke();
+    // contact damage
+    if(dist(e.x,e.y,player.x,player.y) < 28){
+      // shield interactions
+      if(input.shield && player.shieldDur > 0){
+        // shield absorbs and depletes
+        player.shieldDur = clamp(player.shieldDur - (e.atk*0.6), 0, player.shieldMax);
+        spawnParticle(player.x + Math.cos(angle)*20, player.y + Math.sin(angle)*20, 4, '#88ccff');
+      } else {
+        // take damage
+        const dmg = Math.max(1, e.atk - Math.round(playerData.def*0.3));
+        playerData.hp = clamp(playerData.hp - dmg*dt*5, 0, playerData.hpMax);
+      }
     }
   }
-  // shield bubble
-  if(shieldHold){ ctx.beginPath(); ctx.arc(0,0,42,0,Math.PI*2); ctx.strokeStyle='rgba(80,255,200,0.25)'; ctx.stroke(); }
-  // blood overlay
-  const specks = Math.floor(bloodAmount * 160);
-  for(let i=0;i<specks;i++){ ctx.fillStyle = `rgba(180,10,10,${rand(0.2,0.9)})`; ctx.fillRect(rand(-12,16), rand(-20,18), randInt(1,3), randInt(1,3)); }
-  ctx.restore();
-}
-function drawEnemy(e){
-  ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(Math.atan2(e.vy,e.vx)||0);
-  const color = e.pl>=12? '#aa3366' : e.pl>=8? '#ffaa33' : e.pl>=4? '#66ccff' : '#cc9966';
-  ctx.fillStyle = color; ctx.fillRect(-12,-12,24,24);
-  ctx.fillStyle = '#222'; ctx.fillRect(12,-4,14,8);
-  // hp bar
-  ctx.fillStyle = '#222'; ctx.fillRect(-18,-18,36,4); ctx.fillStyle = '#a22'; ctx.fillRect(-18,-18,36*(e.hp/e.maxHP),4);
-  ctx.restore();
+
+  // world simple auto wave spawn
+  if(world.enemies.length === 0 && world.wave < 100){
+    setTimeout(spawnWave, 600);
+  }
+
+  // particles lifetime
+  for(let i=world.particles.length-1;i>=0;i--){
+    const p = world.particles[i];
+    p.life -= dt*60;
+    p.x += p.vx * dt * 60;
+    p.y += p.vy * dt * 60;
+    if(p.life<=0) world.particles.splice(i,1);
+  }
+
+  // update UI mirrors
+  updateUI();
 }
 
-// -------------------- Populate Spells UI & Controls --------------------
-function populateSpells(){
-  const container = document.getElementById('spells'); container.innerHTML = '';
-  const keysMap = ['1','2','3','4','5','6','7','8','9'];
-  let idx=0;
-  for(let id in SPELLS){
-    idx++;
-    const s = SPELLS[id];
+/* --------- Visual helpers --------- */
+function spawnParticle(x,y,count,color){
+  for(let i=0;i<count;i++){
+    world.particles.push({x:x,y:y,vx:rand(-2,2),vy:rand(-2,2),life:rand(20,80),col:color});
+  }
+}
+function spawnExplosion(x,y){
+  spawnParticle(x,y,18,'#ffbb33');
+  spawnParticle(x,y,6,'#ff3344');
+}
+
+/* --------- XP & Leveling --------- */
+function gainXP(n){
+  playerData.xp += n;
+  while(playerData.xp >= playerData.xpNext){
+    playerData.xp -= playerData.xpNext;
+    playerData.level++;
+    playerData.xpNext = Math.floor(playerData.xpNext * 1.35);
+    // give upgrade choices
+    setTimeout(()=>{ showLevelUpOptions(); }, 80);
+  }
+}
+
+/* Level-up UI with 3 random upgrades */
+function showLevelUpOptions(){
+  const choices = [];
+  const possible = [
+    {t:'HP',desc:'+20 HP',apply:()=>{ playerData.hpMax += 20; playerData.hp += 20; }},
+    {t:'Mana',desc:'+20 Mana',apply:()=>{ playerData.manaMax += 20; playerData.mana += 20 }},
+    {t:'ATK',desc:'+2 ATK',apply:()=>{ playerData.atk += 2 }},
+    {t:'DEF',desc:'+1 DEF',apply:()=>{ playerData.def += 1 }},
+    {t:'Spell',desc:'Unlock: Penta-Shot',apply:()=>{ if(!playerData.spells.includes('Penta-Shot')) playerData.spells.push('Penta-Shot') }},
+    {t:'PL',desc:'+1 PL',apply:()=>{ playerData.pl += 1 }},
+    {t:'MPL',desc:'+1 MPL',apply:()=>{ playerData.mpl += 1 }}
+  ];
+  // pick 3 distinct random
+  while(choices.length<3){
+    const c = possible[Math.floor(Math.random()*possible.length)];
+    if(!choices.includes(c)) choices.push(c);
+  }
+  // show modal
+  const modal = document.getElementById('modalContent');
+  modal.innerHTML = '<h3>Level Up! Choose 1</h3>';
+  const container = document.createElement('div');
+  container.style.display='flex';container.style.gap='8px';
+  choices.forEach((c,idx)=>{
+    const btn = document.createElement('button');
+    btn.className='btn';
+    btn.style.flex='1';
+    btn.textContent = c.t + ' — ' + c.desc;
+    btn.onclick = ()=>{
+      c.apply();
+      closeModal();
+      // update spell list UI after unlock
+      renderSpellbook();
+    };
+    container.appendChild(btn);
+  });
+  modal.appendChild(container);
+  document.getElementById('overlay').style.display='flex';
+}
+
+function closeModal(){ document.getElementById('overlay').style.display='none'; document.getElementById('modalContent').innerHTML=''; }
+
+/* --------- UI Rendering --------- */
+function updateUI(){
+  ui.name.textContent = playerData.name;
+  ui.level.textContent = `${playerData.level} (${playerData.xp}/${playerData.xpNext})`;
+  ui.hp.textContent = `${Math.round(playerData.hp)}/${playerData.hpMax}`;
+  ui.mana.textContent = `${Math.round(playerData.mana)}/${playerData.manaMax}`;
+  ui.atk.textContent = playerData.atk;
+  ui.def.textContent = playerData.def;
+  ui.pl.textContent = `${playerData.pl} / ${playerData.mpl}`;
+  ui.spell.textContent = playerData.spells[playerData.activeSpellIndex] || 'Magic Shot';
+  ui.alive.textContent = world.enemies.length;
+  ui.wave.textContent = world.wave;
+  ui.manaBar.style.width = `${(playerData.mana/playerData.manaMax)*100}%`;
+  // enemy list
+  ui.enemyList.innerHTML = '';
+  world.enemies.slice(0,8).forEach(e=>{
+    const div = document.createElement('div'); div.className='enemyRow';
+    div.innerHTML = `<div style="display:flex;gap:8px;align-items:center"><div style="width:12px;height:12px;border-radius:50%;background:${e.color}"></div><strong style="font-size:13px">${e.rank}</strong></div>
+                     <div style="text-align:right"><div style="font-size:12px">${Math.max(0,Math.round(e.hp))} HP</div><div style="font-size:11px;color:var(--muted)">PL ${e.pl}</div></div>`;
+    ui.enemyList.appendChild(div);
+  });
+}
+
+/* Spellbook render */
+function renderSpellbook(){
+  ui.spellList.innerHTML = '';
+  playerData.spells.forEach((s,idx)=>{
     const el = document.createElement('div');
-    el.className = 'spell' + ((s.locked && !save.unlocked.includes(Number(id))) ? ' locked' : '') + ((Number(id)===selectedSpell)?' selected':'');
-    el.innerHTML = `<div style="font-size:10px">${keysMap[idx-1]||''}</div><div style="font-size:12px">${s.name}</div>`;
-    el.title = s.desc + '\nCost:' + s.cost + ' CD:' + s.cd;
-    el.onclick = ()=>{ if(!s.locked || save.unlocked.includes(Number(id))){ selectedSpell = Number(id); highlightSpells(); } else alert('Locked'); };
-    container.appendChild(el);
-    if(idx>=9) break;
-  }
-  highlightSpells();
-}
-function highlightSpells(){
-  const els = document.querySelectorAll('.spell'); els.forEach(el=>el.classList.remove('selected'));
-  const container = document.getElementById('spells'); const children = container.children;
-  for(let i=0;i<children.length;i++){
-    const id = Object.keys(SPELLS)[i];
-    if(Number(id) === selectedSpell) children[i].classList.add('selected');
-  }
+    el.style.display='flex'; el.style.justifyContent='space-between'; el.style.padding='6px'; el.style.cursor='pointer';
+    el.style.borderBottom='1px solid rgba(255,255,255,.03)';
+    el.innerHTML = `<div>${s}</div><div style="opacity:${playerData.activeSpellIndex===idx?1:0.6}">${idx===playerData.activeSpellIndex?'<strong style="color:var(--green)">Selected</strong>':'Select'}</div>`;
+    el.onclick = ()=>{ playerData.activeSpellIndex = idx; renderSpellbook(); updateUI(); };
+    ui.spellList.appendChild(el);
+  });
 }
 
-// keyboard selection 1-9
-addEventListener('keydown', e=>{
-  if(e.key >= '1' && e.key <= '9'){
-    const idx = Number(e.key) - 1;
-    const ids = Object.keys(SPELLS);
-    if(ids[idx]){ const id = Number(ids[idx]); if(!SPELLS[id].locked || save.unlocked.includes(id)){ selectedSpell = id; highlightSpells(); } else { /*locked*/ } }
+/* Cycle spells */
+function cycleSpell(dir){
+  playerData.activeSpellIndex = (playerData.activeSpellIndex + dir + playerData.spells.length) % playerData.spells.length;
+  renderSpellbook(); updateUI();
+}
+
+/* --------- Drawing --------- */
+function draw(dt){
+  ctx.clearRect(0,0,W,H);
+  // optional grid
+  if(world.grid){
+    ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+    ctx.lineWidth=1;
+    for(let x=0;x<W;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for(let y=0;y<H;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  }
+
+  // draw particles
+  for(const p of world.particles){
+    ctx.globalAlpha = clamp(p.life/80,0,1);
+    ctx.fillStyle = p.col || '#fff';
+    ctx.fillRect(p.x, p.y, 2,2);
+    ctx.globalAlpha = 1;
+  }
+
+  // draw projectiles
+  for(const pr of world.projectiles){
+    if(pr.type==='ice') ctx.fillStyle='#88d7ff';
+    else ctx.fillStyle = pr.owner==='player' ? '#66ddff' : '#ff9999';
+    ctx.beginPath(); ctx.arc(pr.x,pr.y,6,0,Math.PI*2); ctx.fill();
+  }
+
+  // enemies
+  for(const e of world.enemies){
+    ctx.fillStyle = e.color;
+    ctx.beginPath(); ctx.arc(e.x,e.y,18,0,Math.PI*2); ctx.fill();
+    // HP bar
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(e.x-22,e.y-30,44,6);
+    ctx.fillStyle = 'rgba(255,180,90,0.9)';
+    const w = clamp(e.hp/e.hpMax,0,1)*44;
+    ctx.fillRect(e.x-22,e.y-30,w,6);
+  }
+
+  // draw player shield if active
+  if(input.shield && player.shieldDur>0){
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#88ccff';
+    ctx.beginPath(); ctx.arc(player.x,player.y,player.r + 22,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // charge aura
+  if(player.charge>0.02){
+    const radius = player.r + 12 + player.charge*38;
+    ctx.globalAlpha = 0.18 + Math.min(0.4, player.charge*0.25);
+    ctx.fillStyle = '#33ccff';
+    ctx.beginPath(); ctx.arc(player.x,player.y,radius,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // player body (simple stick/box)
+  ctx.fillStyle = player.color;
+  ctx.fillRect(player.x-8, player.y-14, 16,28); // body
+  // hat
+  ctx.fillStyle = player.hatColor;
+  ctx.fillRect(player.x-10, player.y-26, 20,8);
+  // right arm as barrel pointing to aim
+  const ax = player.x + Math.cos(player.aimAngle)*26;
+  const ay = player.y + Math.sin(player.aimAngle)*26;
+  ctx.strokeStyle = '#224466'; ctx.lineWidth = 6; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(player.x+8, player.y-4); ctx.lineTo(ax,ay); ctx.stroke();
+  // name tag
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(player.x-36, player.y-48, 72,18);
+  ctx.fillStyle = '#eaf8ff'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(playerData.name, player.x, player.y-36);
+
+  // HUD text small
+  ctx.fillStyle = '#88e6ff';
+  ctx.font='14px sans-serif';
+  ctx.textAlign='left';
+  ctx.fillText(`Wave: ${world.wave}  Enemies: ${world.enemies.length}`, 12,20);
+}
+
+/* --------- Save / Load / Shop / Misc UI --------- */
+document.getElementById('openShop').addEventListener('click', ()=>{
+  const modal = document.getElementById('modalContent');
+  modal.innerHTML = `<h3>Shop</h3><div style="display:flex;gap:8px;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between"><div>Txt.Cat (Skin)</div><div>100 <button class="btn small">Buy</button></div></div>
+    <div style="display:flex;justify-content:space-between"><div>Fire Wizard (Skin)</div><div>500 <button class="btn small">Buy</button></div></div>
+    <div style="text-align:right;margin-top:8px"><button class="btn" id="closeShop">Close</button></div>
+  </div>`;
+  document.getElementById('overlay').style.display='flex';
+  document.getElementById('closeShop').onclick = closeModal;
+});
+document.getElementById('saveBtn').addEventListener('click', ()=>{
+  localStorage.setItem('ame_save', JSON.stringify(playerData));
+  localStorage.setItem('ame_credits', playerData.credits);
+  alert('Saved locally.');
+});
+document.getElementById('loadBtn').addEventListener('click', ()=>{
+  const s = localStorage.getItem('ame_save');
+  if(s){ playerData = JSON.parse(s); renderSpellbook(); updateUI(); alert('Loaded.'); } else alert('No save found.');
+});
+document.getElementById('renameBtn').addEventListener('click', ()=>{
+  const name = prompt('Enter name', playerData.name);
+  if(name){ playerData.name = name; localStorage.setItem('ame_name', name); updateUI(); }
+});
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(confirm('Reset progress?')){
+    localStorage.clear(); location.reload();
   }
 });
+document.getElementById('toggleGrid').addEventListener('click', ()=>{ world.grid = !world.grid; });
+document.getElementById('cycleLeft').addEventListener('click', ()=>{ cycleSpell(-1); });
+document.getElementById('cycleRight').addEventListener('click', ()=>{ cycleSpell(1); });
+document.getElementById('shieldBtn').addEventListener('mousedown', ()=>{ input.shield=true; });
+document.getElementById('shieldBtn').addEventListener('mouseup', ()=>{ input.shield=false; });
+document.getElementById('multiplayerBtn').addEventListener('click', ()=>{
+  const modal = document.getElementById('modalContent');
+  modal.innerHTML = `<h3>Multiplayer (Auto-WiFi)</h3><div style="color:var(--muted);margin-bottom:8px">Networking is stubbed in this prototype. Real-time multiplayer requires a signaling server or WebSocket endpoint. This is a placeholder UI for auto-connect and name/stats display.</div><div style="text-align:right"><button class="btn" id="closeMP">Close</button></div>`;
+  document.getElementById('overlay').style.display='flex';
+  document.getElementById('closeMP').onclick = closeModal;
+});
 
-// -------------------- Init & Loop --------------------
-document.getElementById('playBtn').onclick = ()=>{ playing=true; if(enemies.length===0) waveUp(); saveSave(); };
-document.getElementById('resetBtn').onclick = ()=>{ if(confirm('Reset save?')){ localStorage.removeItem('alt_save'); location.reload(); } };
-populateSpells();
+/* Shop & skins simplified - clicks buy simulate deduction */
+document.querySelectorAll('.shopItem').forEach((el,idx)=>{
+  el.addEventListener('click', ()=>{
+    alert('Shop click (preview). Use Save to persist credits.');
+  });
+});
 
-let lastTS = performance.now();
+/* Overlay close on click outside */
+document.getElementById('overlay').addEventListener('click', (e)=>{ if(e.target.id==='overlay') closeModal(); });
+
+/* --------- Game loop --------- */
 function loop(ts){
-  const dt = Math.min(1/30, (ts - lastTS)/1000 || 0.016);
-  lastTS = ts;
-  update(dt);
-  draw();
+  const dt = lastTs ? Math.min(0.05,(ts-lastTs)/1000) : 0.016;
+  lastTs = ts;
+  updateEntities(dt);
+  draw(dt);
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
-setInterval(saveSave, 2000);
 
-// -------------------- Misc Helpers --------------------
-function applyDamageEntity(entity, dmg, atkPL, owner){ // redefined local to ensure closure
-  if(entity === player){ const effective = Math.max(1, Math.round(dmg - (save.def + save.pl*0.5))); save.curHP -= effective; bloodAmount = clamp(bloodAmount + effective / save.maxHP * 0.18, 0, 1); }
-  else { const eff = resolveHit(dmg, atkPL, entity); entity.hp -= eff; if(entity.hp <= 0){ spawnParticles(entity.x, entity.y, 20); save.xp += 60 + Math.floor(entity.level*10); } }
+/* initialize */
+function init(){
+  // place player at center
+  player.x = W/2; player.y = H/2;
+  renderSpellbook();
+  updateUI();
+  // spawn first wave
+  spawnWave();
+  requestAnimationFrame(loop);
 }
-function spawnParticles(x,y,n){ for(let i=0;i<n;i++) particles.push({x,y,vx:rand(-2,2),vy:rand(-2,2),life:200+rand(0,400),col:'#f55'}); }
 
-// initial spawn for testing
-for(let i=0;i<3;i++) spawnEnemy(1);
+/* Handle window resize to scale canvas */
+function fitCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  // adjust internally if css scaled
+  W = canvas.width;
+  H = canvas.height;
+}
+window.addEventListener('resize', fitCanvas);
 
-// expose some debug to console
-console.log('Alternate v0.9 loaded: spells:', Object.keys(SPELLS).length);
-
+init();
 </script>
 </body>
 </html>
-
